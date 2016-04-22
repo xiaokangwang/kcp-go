@@ -57,6 +57,3 @@ time for 1MB rtt 52.313861ms
 PASS
 ok  	_/Users/xtaci/kcp-go	0.063s
 ```
-
-# Applications  -- 相关应用
-1. [kcptun](https://github.com/xtaci/kcptun) -- TCP流转换为KCP+UDP流
