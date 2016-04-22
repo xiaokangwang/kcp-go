@@ -423,12 +423,12 @@ func (l *Listener) Addr() net.Addr {
 // Listen listens for incoming KCP packets addressed to the local address laddr on the network "udp",
 // mode must be one of: MODE_DEFAULT,MODE_NORMAL,MODE_FAST
 func Listen(mode Mode, laddr string) (*Listener, error) {
-	return ListenEncrypted(mode, laddr, "")
+	return ListenEncrypted(mode, laddr, nil)
 }
 
 // ListenEncrypted listens for incoming KCP packets addressed to the local address laddr on the network "udp" with packet encryption,
 // mode must be one of: MODE_DEFAULT,MODE_NORMAL,MODE_FAST
-func ListenEncrypted(mode Mode, laddr string, key string) (*Listener, error) {
+func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", laddr)
 	if err != nil {
 		return nil, err
@@ -445,8 +445,8 @@ func ListenEncrypted(mode Mode, laddr string, key string) (*Listener, error) {
 	l.ch_accepts = make(chan *UDPSession, 10)
 	l.ch_deadlinks = make(chan net.Addr, 10)
 	l.die = make(chan struct{})
-	if key != "" {
-		pass := sha256.Sum256([]byte(key))
+	if key != nil {
+		pass := sha256.Sum256(key)
 		if block, err := aes.NewCipher(pass[:]); err == nil {
 			l.block = block
 		} else {
@@ -459,11 +459,11 @@ func ListenEncrypted(mode Mode, laddr string, key string) (*Listener, error) {
 
 // Dial connects to the remote address raddr on the network "udp", mode is same as Listen
 func Dial(mode Mode, raddr string) (*UDPSession, error) {
-	return DialEncrypted(mode, raddr, "")
+	return DialEncrypted(mode, raddr, nil)
 }
 
 // DialEncrypted connects to the remote address raddr on the network "udp" with packet encryption, mode is same as Listen
-func DialEncrypted(mode Mode, raddr string, key string) (*UDPSession, error) {
+func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", raddr)
 	if err != nil {
 		return nil, err
@@ -472,8 +472,8 @@ func DialEncrypted(mode Mode, raddr string, key string) (*UDPSession, error) {
 	for {
 		port := BASE_PORT + rand.Int()%(MAX_PORT-BASE_PORT)
 		if udpconn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port}); err == nil {
-			if key != "" {
-				pass := sha256.Sum256([]byte(key))
+			if key != nil {
+				pass := sha256.Sum256(key)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
 					return newUDPSession(rand.Uint32(), mode, nil, udpconn, udpaddr, block), nil
 				} else {
