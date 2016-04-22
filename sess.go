@@ -286,17 +286,23 @@ func (s *UDPSession) read_loop() {
 	for {
 		conn.SetReadDeadline(time.Now().Add(time.Second))
 		if n, err := conn.Read(buffer); err == nil && n >= IKCP_OVERHEAD {
+			data_valid := false
 			data := buffer[:n]
 			if s.block != nil && n >= IKCP_OVERHEAD+HEADER_SIZE {
 				decrypt(s.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
-				if !bytes.Equal(checksum[:], data[:md5.Size]) {
-					continue
+				if bytes.Equal(checksum[:], data[:md5.Size]) {
+					data = data[md5.Size:]
+					data_valid = true
 				}
-				data = data[md5.Size:]
+			} else if s.block == nil {
+				data_valid = true
 			}
-			s.kcp_input(data)
+
+			if data_valid {
+				s.kcp_input(data)
+			}
 		} else if err, ok := err.(*net.OpError); ok && err.Timeout() {
 		} else {
 			return
@@ -332,32 +338,37 @@ func (l *Listener) monitor() {
 	for {
 		conn.SetReadDeadline(time.Now().Add(time.Second))
 		if n, from, err := conn.ReadFromUDP(buffer); err == nil && n >= IKCP_OVERHEAD {
+			data_valid := false
 			data := make([]byte, n)
 			copy(data, buffer)
 			if l.block != nil && n >= IKCP_OVERHEAD+HEADER_SIZE {
 				decrypt(l.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
-				if !bytes.Equal(checksum[:], data[:md5.Size]) {
-					continue
+				if bytes.Equal(checksum[:], data[:md5.Size]) {
+					data = data[md5.Size:]
+					data_valid = true
 				}
-				data = data[md5.Size:]
+			} else if l.block == nil {
+				data_valid = true
 			}
 
-			addr := from.String()
-			s, ok := l.sessions[addr]
-			if !ok {
-				var conv uint32
-				ikcp_decode32u(data, &conv) // conversation id
-				s := newUDPSession(conv, l.mode, l, conn, from, l.block)
-				ch_feed <- func() {
-					s.kcp_input(data)
-				}
-				l.sessions[addr] = s
-				l.ch_accepts <- s
-			} else {
-				ch_feed <- func() {
-					s.kcp_input(data)
+			if data_valid {
+				addr := from.String()
+				s, ok := l.sessions[addr]
+				if !ok {
+					var conv uint32
+					ikcp_decode32u(data, &conv) // conversation id
+					s := newUDPSession(conv, l.mode, l, conn, from, l.block)
+					ch_feed <- func() {
+						s.kcp_input(data)
+					}
+					l.sessions[addr] = s
+					l.ch_accepts <- s
+				} else {
+					ch_feed <- func() {
+						s.kcp_input(data)
+					}
 				}
 			}
 		}
