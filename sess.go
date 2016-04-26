@@ -284,7 +284,6 @@ func (s *UDPSession) read_loop() {
 	conn := s.conn
 	buffer := make([]byte, 4096)
 	for {
-		conn.SetReadDeadline(time.Now().Add(time.Second))
 		if n, err := conn.Read(buffer); err == nil && n >= IKCP_OVERHEAD {
 			data_valid := false
 			data := buffer[:n]
@@ -303,15 +302,8 @@ func (s *UDPSession) read_loop() {
 			if data_valid {
 				s.kcp_input(data)
 			}
-		} else if err, ok := err.(*net.OpError); ok && err.Timeout() {
 		} else {
 			return
-		}
-
-		select {
-		case <-s.die:
-			return
-		default:
 		}
 	}
 }
