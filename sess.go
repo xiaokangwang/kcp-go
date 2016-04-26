@@ -357,6 +357,7 @@ func (l *Listener) monitor() {
 				addr := from.String()
 				s, ok := l.sessions[addr]
 				if !ok {
+					l.clean_dealinks()
 					var conv uint32
 					ikcp_decode32u(data, &conv) // conversation id
 					s := newUDPSession(conv, l.mode, l, conn, from, l.block)
@@ -371,15 +372,18 @@ func (l *Listener) monitor() {
 					}
 				}
 			}
-		}
-
-		select {
-		case deadlink := <-l.ch_deadlinks: // remove deadlinks
-			delete(l.sessions, deadlink.String())
-		case <-l.die: // listener close
+		} else if err, ok := err.(*net.OpError); ok && err.Timeout() {
+			l.clean_dealinks()
+		} else {
 			return
-		default:
 		}
+	}
+}
+
+func (l *Listener) clean_dealinks() {
+	n := len(l.ch_deadlinks)
+	for i := 0; i < n; i++ {
+		delete(l.sessions, (<-l.ch_deadlinks).String())
 	}
 }
 
@@ -442,8 +446,8 @@ func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
 	l.conn = conn
 	l.mode = mode
 	l.sessions = make(map[string]*UDPSession)
-	l.ch_accepts = make(chan *UDPSession, 10)
-	l.ch_deadlinks = make(chan net.Addr, 10)
+	l.ch_accepts = make(chan *UDPSession, 1024)
+	l.ch_deadlinks = make(chan net.Addr, 1024)
 	l.die = make(chan struct{})
 	if key != nil {
 		pass := sha256.Sum256(key)
