@@ -228,11 +228,12 @@ func (s *UDPSession) SetMtu(mtu int) {
 
 // kcp update, input loop
 func (s *UDPSession) update_task() {
-	trigger := time.NewTicker(10 * time.Millisecond)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 	var nextupdate uint32
 	for {
 		select {
-		case <-trigger.C:
+		case <-ticker.C:
 			current := uint32(time.Now().UnixNano() / int64(time.Millisecond))
 			s.mu.Lock()
 			if current >= nextupdate || s.need_update {
