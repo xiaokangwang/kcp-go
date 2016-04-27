@@ -38,6 +38,7 @@ const (
 type (
 	// UDPSession defines a KCP session implemented by UDP
 	UDPSession struct {
+		ticker        chan time.Time
 		kcp           *KCP         // the core ARQ
 		conn          *net.UDPConn // the underlying UDP socket
 		block         cipher.Block
@@ -56,6 +57,7 @@ type (
 // newUDPSession create a new udp session for client or server
 func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
 	sess := new(UDPSession)
+	sess.ticker = make(chan time.Time, 1)
 	sess.die = make(chan struct{})
 	sess.local = conn.LocalAddr()
 	sess.event_read = make(chan bool, 1)
@@ -228,13 +230,20 @@ func (s *UDPSession) SetMtu(mtu int) {
 
 // kcp update, input loop
 func (s *UDPSession) update_task() {
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
+	var tc <-chan time.Time
+	if s.l == nil { // client
+		ticker := time.NewTicker(10 * time.Millisecond)
+		tc = ticker.C
+		defer ticker.Stop()
+	} else {
+		tc = s.ticker
+	}
+
 	var nextupdate uint32
 	for {
 		select {
-		case <-ticker.C:
-			current := uint32(time.Now().UnixNano() / int64(time.Millisecond))
+		case now := <-tc:
+			current := uint32(now.UnixNano() / int64(time.Millisecond))
 			s.mu.Lock()
 			if current >= nextupdate || s.need_update {
 				s.kcp.Update(current)
@@ -333,6 +342,8 @@ func (l *Listener) monitor() {
 	go l.feed(ch_feed)
 	ch_packet := make(chan packet, 65535)
 	go l.receiver(ch_packet)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		select {
 		case p := <-ch_packet:
@@ -373,6 +384,14 @@ func (l *Listener) monitor() {
 			delete(l.sessions, deadlink.String())
 		case <-l.die:
 			return
+		case <-ticker.C:
+			now := time.Now()
+			for _, s := range l.sessions {
+				select {
+				case s.ticker <- now:
+				default:
+				}
+			}
 		}
 	}
 }
