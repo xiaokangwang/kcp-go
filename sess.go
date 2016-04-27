@@ -327,8 +327,8 @@ func (l *Listener) monitor() {
 	ch_feed := make(chan func(), 65535)
 	go l.feed(ch_feed)
 	buffer := make([]byte, 4096)
+	var packet_count uint64
 	for {
-		conn.SetReadDeadline(time.Now().Add(time.Second))
 		if n, from, err := conn.ReadFromUDP(buffer); err == nil && n >= IKCP_OVERHEAD {
 			data_valid := false
 			data := make([]byte, n)
@@ -349,7 +349,6 @@ func (l *Listener) monitor() {
 				addr := from.String()
 				s, ok := l.sessions[addr]
 				if !ok {
-					l.clean_dealinks()
 					var conv uint32
 					ikcp_decode32u(data, &conv) // conversation id
 					s := newUDPSession(conv, l.mode, l, conn, from, l.block)
@@ -364,18 +363,17 @@ func (l *Listener) monitor() {
 					}
 				}
 			}
-		} else if err, ok := err.(*net.OpError); ok && err.Timeout() {
-			l.clean_dealinks()
+
+			packet_count++
+			if packet_count%128 == 0 {
+				n := len(l.ch_deadlinks)
+				for i := 0; i < n; i++ {
+					delete(l.sessions, (<-l.ch_deadlinks).String())
+				}
+			}
 		} else {
 			return
 		}
-	}
-}
-
-func (l *Listener) clean_dealinks() {
-	n := len(l.ch_deadlinks)
-	for i := 0; i < n; i++ {
-		delete(l.sessions, (<-l.ch_deadlinks).String())
 	}
 }
 
