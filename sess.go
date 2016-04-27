@@ -319,21 +319,26 @@ type (
 		ch_deadlinks chan net.Addr
 		die          chan struct{}
 	}
+
+	packet struct {
+		from *net.UDPAddr
+		data []byte
+	}
 )
 
 // monitor incoming data for all connections of server
 func (l *Listener) monitor() {
-	conn := l.conn
 	ch_feed := make(chan func(), 65535)
 	go l.feed(ch_feed)
-	buffer := make([]byte, 4096)
-	var packet_count uint64
+	ch_packet := make(chan packet, 65535)
+	go l.receiver(ch_packet)
 	for {
-		if n, from, err := conn.ReadFromUDP(buffer); err == nil && n >= IKCP_OVERHEAD {
+		select {
+		case p := <-ch_packet:
+			data := p.data
+			from := p.from
 			data_valid := false
-			data := make([]byte, n)
-			copy(data, buffer)
-			if l.block != nil && n >= IKCP_OVERHEAD+HEADER_SIZE {
+			if l.block != nil && len(data) >= IKCP_OVERHEAD+HEADER_SIZE {
 				decrypt(l.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
@@ -351,7 +356,7 @@ func (l *Listener) monitor() {
 				if !ok {
 					var conv uint32
 					ikcp_decode32u(data, &conv) // conversation id
-					s := newUDPSession(conv, l.mode, l, conn, from, l.block)
+					s := newUDPSession(conv, l.mode, l, l.conn, from, l.block)
 					ch_feed <- func() {
 						s.kcp_input(data)
 					}
@@ -363,14 +368,21 @@ func (l *Listener) monitor() {
 					}
 				}
 			}
+		case deadlink := <-l.ch_deadlinks:
+			delete(l.sessions, deadlink.String())
+		case <-l.die:
+			return
+		}
+	}
+}
 
-			packet_count++
-			if packet_count%128 == 0 {
-				n := len(l.ch_deadlinks)
-				for i := 0; i < n; i++ {
-					delete(l.sessions, (<-l.ch_deadlinks).String())
-				}
-			}
+func (l *Listener) receiver(ch chan packet) {
+	buffer := make([]byte, 4096)
+	for {
+		if n, from, err := l.conn.ReadFromUDP(buffer); err == nil && n >= IKCP_OVERHEAD {
+			data := make([]byte, n)
+			copy(data, buffer)
+			ch <- packet{from, data}
 		} else {
 			return
 		}
