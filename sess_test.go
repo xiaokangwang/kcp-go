@@ -11,7 +11,7 @@ const port = "127.0.0.1:9999"
 const key = "testkey"
 
 func server() {
-	l, err := ListenEncrypted(MODE_NORMAL, port, []byte(key))
+	l, err := ListenEncrypted(MODE_FAST, port, []byte(key))
 	if err != nil {
 		panic(err)
 	}
@@ -55,7 +55,7 @@ func TestSendRecv(t *testing.T) {
 }
 
 func client(wg *sync.WaitGroup) {
-	cli, err := DialEncrypted(MODE_NORMAL, port, []byte(key))
+	cli, err := DialEncrypted(MODE_FAST, port, []byte(key))
 	if err != nil {
 		panic(err)
 	}
@@ -83,7 +83,7 @@ func TestBigPacket(t *testing.T) {
 }
 
 func client2(wg *sync.WaitGroup) {
-	cli, err := DialEncrypted(MODE_NORMAL, port, []byte(key))
+	cli, err := DialEncrypted(MODE_FAST, port, []byte(key))
 	if err != nil {
 		panic(err)
 	}
@@ -120,18 +120,18 @@ func TestSpeed(t *testing.T) {
 	wg.Add(1)
 	go client3(&wg)
 	wg.Wait()
-	fmt.Println("time for 10MB rtt", time.Now().Sub(start))
+	fmt.Println("time for 16MB rtt with encryption", time.Now().Sub(start))
 }
 
 func client3(wg *sync.WaitGroup) {
-	cli, err := DialEncrypted(MODE_NORMAL, port, []byte(key))
+	cli, err := DialEncrypted(MODE_FAST, port, []byte(key))
 	if err != nil {
 		panic(err)
 	}
-	msg := make([]byte, 1024*1024)
+	msg := make([]byte, 4096)
 	buf := make([]byte, 1024*1024)
 	cli.SetWindowSize(1024, 1024)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 4096; i++ {
 		cli.Write(msg)
 	}
 	nrecv := 0
@@ -142,7 +142,7 @@ func client3(wg *sync.WaitGroup) {
 			break
 		} else {
 			nrecv += n
-			if nrecv == 10*1024*1024 {
+			if nrecv == 4096*4096 {
 				break
 			}
 		}
@@ -165,7 +165,7 @@ func TestParallel(t *testing.T) {
 }
 
 func client4(wg *sync.WaitGroup) {
-	cli, err := DialEncrypted(MODE_NORMAL, port, []byte(key))
+	cli, err := DialEncrypted(MODE_FAST, port, []byte(key))
 	if err != nil {
 		panic(err)
 	}
