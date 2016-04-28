@@ -120,7 +120,7 @@ func TestSpeed(t *testing.T) {
 	wg.Add(1)
 	go client3(&wg)
 	wg.Wait()
-	fmt.Println("time for 1MB rtt", time.Now().Sub(start))
+	fmt.Println("time for 10MB rtt", time.Now().Sub(start))
 }
 
 func client3(wg *sync.WaitGroup) {
@@ -129,9 +129,11 @@ func client3(wg *sync.WaitGroup) {
 		panic(err)
 	}
 	msg := make([]byte, 1024*1024)
-	buf := make([]byte, 65536)
+	buf := make([]byte, 1024*1024)
 	cli.SetWindowSize(1024, 1024)
-	cli.Write(msg)
+	for i := 0; i < 10; i++ {
+		cli.Write(msg)
+	}
 	nrecv := 0
 	for {
 		n, err := cli.Read(buf)
@@ -140,7 +142,7 @@ func client3(wg *sync.WaitGroup) {
 			break
 		} else {
 			nrecv += n
-			if nrecv == 1024*1024 {
+			if nrecv == 10*1024*1024 {
 				break
 			}
 		}
