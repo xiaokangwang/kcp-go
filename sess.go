@@ -533,12 +533,12 @@ func encrypt(block cipher.Block, data []byte) {
 
 func decrypt(block cipher.Block, data []byte) {
 	var tbl [aes.BlockSize]byte
+	var next [aes.BlockSize]byte
 	copy(tbl[:], IV)
 	block.Encrypt(tbl[:], tbl[:])
 	n := len(data) / aes.BlockSize
 	for i := 0; i < n; i++ {
 		base := i * aes.BlockSize
-		var next [aes.BlockSize]byte
 		copy(next[:], data[base:])
 		block.Encrypt(next[:], next[:])
 
