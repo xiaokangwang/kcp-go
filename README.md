@@ -54,9 +54,9 @@ A port of [KCP](https://github.com/skywind3000/kcp) by [skywind3000](https://git
 # Performance  -- 性能
 ```
 $ go test -run TestSpeed
-new client 127.0.0.1:57296
-total recv: 1048576
-time for 1MB rtt 52.313861ms
+new client 127.0.0.1:61165
+total recv: 16777216
+time for 16MB rtt with encryption 1.062136639s
 PASS
-ok  	_/Users/xtaci/kcp-go	0.063s
+ok      github.com/xtaci/kcp-go 1.076s
 ```
