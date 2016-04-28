@@ -12,33 +12,45 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"runtime"
 	"sync"
 	"time"
+	"unsafe"
 )
 
 var (
-	ERR_TIMEOUT     = errors.New("i/o timeout")
-	ERR_BROKEN_PIPE = errors.New("broken pipe")
-	IV              = []byte{167, 115, 79, 156, 18, 172, 27, 1, 164, 21, 242, 193, 252, 120, 230, 107}
+	errTimeout    = errors.New("i/o timeout")
+	errBrokenPipe = errors.New("broken pipe")
+	initialVector = []byte{167, 115, 79, 156, 18, 172, 27, 1, 164, 21, 242, 193, 252, 120, 230, 107}
 )
 
+// Mode specifies the working mode of kcp
 type Mode int
 
 const (
-	MODE_DEFAULT     Mode    = iota // default mode , slowest
-	MODE_NORMAL                     // normal kcp mode, faster
-	MODE_FAST                       // fastest mode
-	BASE_PORT        = 20000        // minimum port for listening
-	MAX_PORT         = 65535        // maximum port for listening
-	DEFAULT_WND_SIZE = 128          // default window size, in packet
-	XOR_TABLE_SIZE   = 16384
-	HEADER_SIZE      = aes.BlockSize + md5.Size
+	// MODE_DEFAULT slowest
+	MODE_DEFAULT Mode = iota
+	// MODE_DEFAULT normal kcp mode, faster
+	MODE_NORMAL
+	// MODE_FAST fastest mode
+	MODE_FAST
+)
+
+const (
+	wordSize          = int(unsafe.Sizeof(uintptr(0)))
+	supportsUnaligned = runtime.GOARCH == "386" || runtime.GOARCH == "amd64"
+)
+
+const (
+	basePort       = 20000 // minimum port for listening
+	maxPort        = 65535 // maximum port for listening
+	defaultWndSize = 128   // default window size, in packet
+	headerSize     = aes.BlockSize + md5.Size
 )
 
 type (
 	// UDPSession defines a KCP session implemented by UDP
 	UDPSession struct {
-		ticker        chan time.Time
 		kcp           *KCP         // the core ARQ
 		conn          *net.UDPConn // the underlying UDP socket
 		block         cipher.Block
@@ -47,20 +59,21 @@ type (
 		rd            time.Time // read deadline
 		sockbuff      []byte    // kcp receiving is based on packet, I turn it into stream
 		die           chan struct{}
-		is_closed     bool
-		need_update   bool
+		isClosed      bool
+		needUpdate    bool
 		mu            sync.Mutex
-		event_read    chan bool
+		chReadEvent   chan bool
+		chTicker      chan time.Time
 	}
 )
 
 // newUDPSession create a new udp session for client or server
 func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
 	sess := new(UDPSession)
-	sess.ticker = make(chan time.Time, 1)
+	sess.chTicker = make(chan time.Time, 1)
 	sess.die = make(chan struct{})
 	sess.local = conn.LocalAddr()
-	sess.event_read = make(chan bool, 1)
+	sess.chReadEvent = make(chan bool, 1)
 	sess.remote = remote
 	sess.conn = conn
 	sess.l = l
@@ -70,11 +83,11 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 			buf = buf[:size]
 			if sess.block != nil {
 				// header
-				ext := make([]byte, HEADER_SIZE+size)
+				ext := make([]byte, headerSize+size)
 				io.ReadFull(crand.Reader, ext[:aes.BlockSize]) // OTP
 				checksum := md5.Sum(buf)
 				copy(ext[aes.BlockSize:], checksum[:])
-				copy(ext[HEADER_SIZE:], buf)
+				copy(ext[headerSize:], buf)
 				buf = ext
 				encrypt(sess.block, buf)
 			}
@@ -84,8 +97,8 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 			}
 		}
 	})
-	sess.kcp.WndSize(DEFAULT_WND_SIZE, DEFAULT_WND_SIZE)
-	sess.kcp.SetMtu(IKCP_MTU_DEF - HEADER_SIZE)
+	sess.kcp.WndSize(defaultWndSize, defaultWndSize)
+	sess.kcp.SetMtu(IKCP_MTU_DEF - headerSize)
 	switch mode {
 	case MODE_FAST:
 		sess.kcp.NoDelay(1, 10, 2, 1)
@@ -95,9 +108,9 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 		sess.kcp.NoDelay(0, 40, 0, 0)
 	}
 
-	go sess.update_task()
+	go sess.updateTask()
 	if l == nil { // it's a client connection
-		go sess.read_loop()
+		go sess.readLoop()
 	}
 	return sess
 }
@@ -113,15 +126,15 @@ func (s *UDPSession) Read(b []byte) (n int, err error) {
 			return n, nil
 		}
 
-		if s.is_closed {
+		if s.isClosed {
 			s.mu.Unlock()
-			return 0, ERR_BROKEN_PIPE
+			return 0, errBrokenPipe
 		}
 
 		if !s.rd.IsZero() {
 			if time.Now().After(s.rd) { // timeout
 				s.mu.Unlock()
-				return 0, ERR_TIMEOUT
+				return 0, errTimeout
 			}
 		}
 
@@ -138,7 +151,7 @@ func (s *UDPSession) Read(b []byte) (n int, err error) {
 
 		// wait for read event or timeout
 		select {
-		case <-s.event_read:
+		case <-s.chReadEvent:
 		case <-time.After(1 * time.Second):
 		}
 	}
@@ -148,8 +161,8 @@ func (s *UDPSession) Read(b []byte) (n int, err error) {
 func (s *UDPSession) Write(b []byte) (n int, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.is_closed {
-		return 0, ERR_BROKEN_PIPE
+	if s.isClosed {
+		return 0, errBrokenPipe
 	}
 
 	n = len(b)
@@ -166,7 +179,7 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 			b = b[max:]
 		}
 	}
-	s.need_update = true
+	s.needUpdate = true
 	return
 }
 
@@ -174,11 +187,11 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 func (s *UDPSession) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.is_closed {
-		return ERR_BROKEN_PIPE
+	if s.isClosed {
+		return errBrokenPipe
 	}
 	close(s.die)
-	s.is_closed = true
+	s.isClosed = true
 	if s.l == nil { // client socket close
 		s.conn.Close()
 	}
@@ -229,14 +242,14 @@ func (s *UDPSession) SetMtu(mtu int) {
 }
 
 // kcp update, input loop
-func (s *UDPSession) update_task() {
+func (s *UDPSession) updateTask() {
 	var tc <-chan time.Time
 	if s.l == nil { // client
 		ticker := time.NewTicker(10 * time.Millisecond)
 		tc = ticker.C
 		defer ticker.Stop()
 	} else {
-		tc = s.ticker
+		tc = s.chTicker
 	}
 
 	var nextupdate uint32
@@ -245,11 +258,11 @@ func (s *UDPSession) update_task() {
 		case now := <-tc:
 			current := uint32(now.UnixNano() / int64(time.Millisecond))
 			s.mu.Lock()
-			if current >= nextupdate || s.need_update {
+			if current >= nextupdate || s.needUpdate {
 				s.kcp.Update(current)
 				nextupdate = s.kcp.Check(current)
 			}
-			s.need_update = false
+			s.needUpdate = false
 			s.mu.Unlock()
 			// deadlink detection may fail fast in high packet lost environment
 			// I just ignore it for the moment
@@ -260,57 +273,57 @@ func (s *UDPSession) update_task() {
 			*/
 		case <-s.die:
 			if s.l != nil { // has listener
-				s.l.ch_deadlinks <- s.remote
+				s.l.chDeadlinks <- s.remote
 			}
 			return
 		}
 	}
 }
 
-// Get conversation id of a session
+// GetConv gets conversation id of a session
 func (s *UDPSession) GetConv() uint32 {
 	return s.kcp.conv
 }
 
-func (s *UDPSession) read_event() {
+func (s *UDPSession) notifyReadEvent() {
 	select {
-	case s.event_read <- true:
+	case s.chReadEvent <- true:
 	default:
 	}
 }
 
-func (s *UDPSession) kcp_input(data []byte) {
+func (s *UDPSession) kcpInput(data []byte) {
 	s.mu.Lock()
 	n := s.kcp.Input(data)
-	s.need_update = true
+	s.needUpdate = true
 	s.mu.Unlock()
 	if n == 0 {
-		s.read_event()
+		s.notifyReadEvent()
 	}
 }
 
 // read loop for client session
-func (s *UDPSession) read_loop() {
+func (s *UDPSession) readLoop() {
 	conn := s.conn
 	buffer := make([]byte, 4096)
 	for {
 		if n, err := conn.Read(buffer); err == nil && n >= IKCP_OVERHEAD {
-			data_valid := false
+			dataValid := false
 			data := buffer[:n]
-			if s.block != nil && n >= IKCP_OVERHEAD+HEADER_SIZE {
+			if s.block != nil && n >= IKCP_OVERHEAD+headerSize {
 				decrypt(s.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
 				if bytes.Equal(checksum[:], data[:md5.Size]) {
 					data = data[md5.Size:]
-					data_valid = true
+					dataValid = true
 				}
 			} else if s.block == nil {
-				data_valid = true
+				dataValid = true
 			}
 
-			if data_valid {
-				s.kcp_input(data)
+			if dataValid {
+				s.kcpInput(data)
 			}
 		} else {
 			return
@@ -321,13 +334,13 @@ func (s *UDPSession) read_loop() {
 type (
 	// Listener defines a server listening for connections
 	Listener struct {
-		block        cipher.Block
-		conn         *net.UDPConn
-		mode         Mode
-		sessions     map[string]*UDPSession
-		ch_accepts   chan *UDPSession
-		ch_deadlinks chan net.Addr
-		die          chan struct{}
+		block       cipher.Block
+		conn        *net.UDPConn
+		mode        Mode
+		sessions    map[string]*UDPSession
+		chAccepts   chan *UDPSession
+		chDeadlinks chan net.Addr
+		die         chan struct{}
 	}
 
 	packet struct {
@@ -338,19 +351,19 @@ type (
 
 // monitor incoming data for all connections of server
 func (l *Listener) monitor() {
-	ch_feed := make(chan func(), 65535)
-	go l.feed(ch_feed)
-	ch_packet := make(chan packet, 65535)
-	go l.receiver(ch_packet)
+	chFeed := make(chan func(), 65535)
+	go l.feed(chFeed)
+	chPacket := make(chan packet, 65535)
+	go l.receiver(chPacket)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
-		case p := <-ch_packet:
+		case p := <-chPacket:
 			data := p.data
 			from := p.from
 			data_valid := false
-			if l.block != nil && len(data) >= IKCP_OVERHEAD+HEADER_SIZE {
+			if l.block != nil && len(data) >= IKCP_OVERHEAD+headerSize {
 				decrypt(l.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
@@ -369,18 +382,18 @@ func (l *Listener) monitor() {
 					var conv uint32
 					ikcp_decode32u(data, &conv) // conversation id
 					s := newUDPSession(conv, l.mode, l, l.conn, from, l.block)
-					ch_feed <- func() {
-						s.kcp_input(data)
+					chFeed <- func() {
+						s.kcpInput(data)
 					}
 					l.sessions[addr] = s
-					l.ch_accepts <- s
+					l.chAccepts <- s
 				} else {
-					ch_feed <- func() {
-						s.kcp_input(data)
+					chFeed <- func() {
+						s.kcpInput(data)
 					}
 				}
 			}
-		case deadlink := <-l.ch_deadlinks:
+		case deadlink := <-l.chDeadlinks:
 			delete(l.sessions, deadlink.String())
 		case <-l.die:
 			return
@@ -388,7 +401,7 @@ func (l *Listener) monitor() {
 			now := time.Now()
 			for _, s := range l.sessions {
 				select {
-				case s.ticker <- now:
+				case s.chTicker <- now:
 				default:
 				}
 			}
@@ -424,7 +437,7 @@ func (l *Listener) feed(ch chan func()) {
 // Accept implements the Accept method in the Listener interface; it waits for the next call and returns a generic Conn.
 func (l *Listener) Accept() (*UDPSession, error) {
 	select {
-	case c := <-l.ch_accepts:
+	case c := <-l.chAccepts:
 		return c, nil
 	case <-l.die:
 		return nil, errors.New("listener stopped")
@@ -468,8 +481,8 @@ func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
 	l.conn = conn
 	l.mode = mode
 	l.sessions = make(map[string]*UDPSession)
-	l.ch_accepts = make(chan *UDPSession, 1024)
-	l.ch_deadlinks = make(chan net.Addr, 1024)
+	l.chAccepts = make(chan *UDPSession, 1024)
+	l.chDeadlinks = make(chan net.Addr, 1024)
 	l.die = make(chan struct{})
 	if key != nil {
 		pass := sha256.Sum256(key)
@@ -496,7 +509,7 @@ func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
 	}
 
 	for {
-		port := BASE_PORT + rand.Int()%(MAX_PORT-BASE_PORT)
+		port := basePort + rand.Int()%(maxPort-basePort)
 		if udpconn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port}); err == nil {
 			if key != nil {
 				pass := sha256.Sum256(key)
@@ -514,13 +527,17 @@ func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
 // packet encryption with local CFB mode
 func encrypt(block cipher.Block, data []byte) {
 	var tbl [aes.BlockSize]byte
-	copy(tbl[:], IV)
+	copy(tbl[:], initialVector)
 	block.Encrypt(tbl[:], tbl[:])
 	n := len(data) / aes.BlockSize
 	for i := 0; i < n; i++ {
 		base := i * aes.BlockSize
-		for j := 0; j < aes.BlockSize; j++ {
-			data[base+j] = data[base+j] ^ tbl[j]
+		if supportsUnaligned {
+			fastXORWords(data[base:], tbl[:])
+		} else {
+			for j := 0; j < aes.BlockSize; j++ {
+				data[base+j] = data[base+j] ^ tbl[j]
+			}
 		}
 		copy(tbl[:], data[base:])
 		block.Encrypt(tbl[:], tbl[:])
@@ -534,7 +551,7 @@ func encrypt(block cipher.Block, data []byte) {
 func decrypt(block cipher.Block, data []byte) {
 	var tbl [aes.BlockSize]byte
 	var next [aes.BlockSize]byte
-	copy(tbl[:], IV)
+	copy(tbl[:], initialVector)
 	block.Encrypt(tbl[:], tbl[:])
 	n := len(data) / aes.BlockSize
 	for i := 0; i < n; i++ {
@@ -542,13 +559,26 @@ func decrypt(block cipher.Block, data []byte) {
 		copy(next[:], data[base:])
 		block.Encrypt(next[:], next[:])
 
-		for j := 0; j < aes.BlockSize; j++ {
-			data[base+j] = data[base+j] ^ tbl[j]
+		if supportsUnaligned {
+			fastXORWords(data[base:], tbl[:])
+		} else {
+			for j := 0; j < aes.BlockSize; j++ {
+				data[base+j] = data[base+j] ^ tbl[j]
+			}
 		}
 		copy(tbl[:], next[:])
 	}
 
 	for j := n * aes.BlockSize; j < len(data); j++ {
 		data[j] = data[j] ^ tbl[j%aes.BlockSize]
+	}
+}
+
+func fastXORWords(a, b []byte) {
+	aw := *(*[]uintptr)(unsafe.Pointer(&a))
+	bw := *(*[]uintptr)(unsafe.Pointer(&b))
+	n := len(b) / wordSize
+	for i := 0; i < n; i++ {
+		aw[i] = aw[i] ^ bw[i]
 	}
 }
