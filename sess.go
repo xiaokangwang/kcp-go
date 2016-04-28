@@ -1,12 +1,12 @@
 package kcp
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
 	crand "crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"io"
 	"log"
@@ -314,7 +314,7 @@ func (s *UDPSession) readLoop() {
 				decrypt(s.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
-				if bytes.Equal(checksum[:], data[:md5.Size]) {
+				if subtle.ConstantTimeCompare(checksum[:], data[:md5.Size]) == 1 {
 					data = data[md5.Size:]
 					dataValid = true
 				}
@@ -367,7 +367,7 @@ func (l *Listener) monitor() {
 				decrypt(l.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
-				if bytes.Equal(checksum[:], data[:md5.Size]) {
+				if subtle.ConstantTimeCompare(checksum[:], data[:md5.Size]) == 1 {
 					data = data[md5.Size:]
 					data_valid = true
 				}
