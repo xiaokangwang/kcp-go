@@ -73,6 +73,12 @@ type (
 		mu            sync.Mutex
 		chReadEvent   chan bool
 		chTicker      chan time.Time
+		chUdpOutput   chan output_packet
+	}
+
+	output_packet struct {
+		buf    []byte
+		remote *net.UDPAddr
 	}
 )
 
@@ -80,6 +86,7 @@ type (
 func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
 	sess := new(UDPSession)
 	sess.chTicker = make(chan time.Time, 1)
+	sess.chUdpOutput = make(chan output_packet, 10)
 	sess.die = make(chan struct{})
 	sess.local = conn.LocalAddr()
 	sess.chReadEvent = make(chan bool, 1)
@@ -100,10 +107,7 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 				buf = ext
 				encrypt(sess.block, buf)
 			}
-			n, err := conn.WriteToUDP(buf, remote)
-			if err != nil {
-				log.Println(err, n)
-			}
+			sess.chUdpOutput <- output_packet{buf, remote}
 		}
 	})
 	sess.kcp.WndSize(defaultWndSize, defaultWndSize)
@@ -118,6 +122,7 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 	}
 
 	go sess.updateTask()
+	go sess.outputTask()
 	if l == nil { // it's a client connection
 		go sess.readLoop()
 	}
@@ -248,6 +253,20 @@ func (s *UDPSession) SetMtu(mtu int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.kcp.SetMtu(mtu)
+}
+
+func (s *UDPSession) outputTask() {
+	for {
+		select {
+		case out := <-s.chUdpOutput:
+			n, err := s.conn.WriteToUDP(out.buf, out.remote)
+			if err != nil {
+				log.Println(err, n)
+			}
+		case <-s.die:
+			return
+		}
+	}
 }
 
 // kcp update, input loop
