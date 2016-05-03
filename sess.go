@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
+	crand "crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
