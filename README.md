@@ -53,10 +53,21 @@ A port of [KCP](https://github.com/skywind3000/kcp) by [skywind3000](https://git
 
 # Performance  -- 性能
 ```
+  型号名称：	MacBook Pro
+  型号标识符：	MacBookPro12,1
+  处理器名称：	Intel Core i5
+  处理器速度：	2.7 GHz
+  处理器数目：	1
+  核总数：	2
+  L2 缓存（每个核）：	256 KB
+  L3 缓存：	3 MB
+  内存：	8 GB
+```
+```
 $ go test -run TestSpeed
 new client 127.0.0.1:61165
 total recv: 16777216
-time for 16MB rtt with encryption 1.062136639s
+time for 16MB rtt with encryption 815.842872ms
 PASS
-ok      github.com/xtaci/kcp-go 1.076s
+ok  	github.com/xtaci/kcp-go	0.831s
 ```
