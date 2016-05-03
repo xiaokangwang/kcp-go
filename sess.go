@@ -73,12 +73,7 @@ type (
 		mu            sync.Mutex
 		chReadEvent   chan bool
 		chTicker      chan time.Time
-		chUdpOutput   chan output_packet
-	}
-
-	output_packet struct {
-		buf    []byte
-		remote *net.UDPAddr
+		chUdpOutput   chan []byte
 	}
 )
 
@@ -86,7 +81,7 @@ type (
 func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
 	sess := new(UDPSession)
 	sess.chTicker = make(chan time.Time, 1)
-	sess.chUdpOutput = make(chan output_packet, defaultWndSize)
+	sess.chUdpOutput = make(chan []byte, defaultWndSize)
 	sess.die = make(chan struct{})
 	sess.local = conn.LocalAddr()
 	sess.chReadEvent = make(chan bool, 1)
@@ -96,22 +91,15 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 	sess.block = block
 	sess.kcp = NewKCP(conv, func(buf []byte, size int) {
 		if size >= IKCP_OVERHEAD {
-			buf = buf[:size]
 			if sess.block != nil {
-				// header
 				ext := make([]byte, headerSize+size)
-				io.ReadFull(crand.Reader, ext[:aes.BlockSize]) // OTP
-				checksum := md5.Sum(buf)
-				copy(ext[aes.BlockSize:], checksum[:])
 				copy(ext[headerSize:], buf)
-				buf = ext
-				encrypt(sess.block, buf)
+				sess.chUdpOutput <- ext
 			} else {
 				ext := make([]byte, size)
 				copy(ext, buf)
-				buf = ext
+				sess.chUdpOutput <- ext
 			}
-			sess.chUdpOutput <- output_packet{buf, remote}
 		}
 	})
 	sess.kcp.WndSize(defaultWndSize, defaultWndSize)
@@ -262,8 +250,14 @@ func (s *UDPSession) SetMtu(mtu int) {
 func (s *UDPSession) outputTask() {
 	for {
 		select {
-		case out := <-s.chUdpOutput:
-			n, err := s.conn.WriteToUDP(out.buf, out.remote)
+		case ext := <-s.chUdpOutput:
+			if s.block != nil {
+				io.ReadFull(crand.Reader, ext[:aes.BlockSize]) // OTP
+				checksum := md5.Sum(ext[headerSize:])
+				copy(ext[aes.BlockSize:], checksum[:])
+				encrypt(s.block, ext)
+			}
+			n, err := s.conn.WriteTo(ext, s.remote)
 			if err != nil {
 				log.Println(err, n)
 			}
