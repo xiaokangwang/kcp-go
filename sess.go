@@ -4,7 +4,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
-	crand "crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
@@ -360,8 +359,6 @@ type (
 
 // monitor incoming data for all connections of server
 func (l *Listener) monitor() {
-	chFeed := make(chan func(), 65535)
-	go l.feed(chFeed)
 	chPacket := make(chan packet, 65535)
 	go l.receiver(chPacket)
 	ticker := time.NewTicker(10 * time.Millisecond)
@@ -391,15 +388,11 @@ func (l *Listener) monitor() {
 					var conv uint32
 					ikcp_decode32u(data, &conv) // conversation id
 					s := newUDPSession(conv, l.mode, l, l.conn, from, l.block)
-					chFeed <- func() {
-						s.kcpInput(data)
-					}
+					s.kcpInput(data)
 					l.sessions[addr] = s
 					l.chAccepts <- s
 				} else {
-					chFeed <- func() {
-						s.kcpInput(data)
-					}
+					s.kcpInput(data)
 				}
 			}
 		case deadlink := <-l.chDeadlinks:
@@ -426,18 +419,6 @@ func (l *Listener) receiver(ch chan packet) {
 			copy(data, buffer)
 			ch <- packet{from, data}
 		} else {
-			return
-		}
-	}
-}
-
-// feed data from listener to UDPSessions
-func (l *Listener) feed(ch chan func()) {
-	for {
-		select {
-		case f := <-ch:
-			f()
-		case <-l.die:
 			return
 		}
 	}
