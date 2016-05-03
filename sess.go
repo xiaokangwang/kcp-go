@@ -106,6 +106,10 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 				copy(ext[headerSize:], buf)
 				buf = ext
 				encrypt(sess.block, buf)
+			} else {
+				ext := make([]byte, size)
+				copy(ext, buf)
+				buf = ext
 			}
 			sess.chUdpOutput <- output_packet{buf, remote}
 		}
