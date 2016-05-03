@@ -22,10 +22,19 @@ var (
 	errTimeout    = errors.New("i/o timeout")
 	errBrokenPipe = errors.New("broken pipe")
 	initialVector = []byte{167, 115, 79, 156, 18, 172, 27, 1, 164, 21, 242, 193, 252, 120, 230, 107}
+	xor           XORFunc
 )
+
+func init() {
+	xor = safeXORBytes
+	if supportsUnaligned {
+		xor = fastXORWords
+	}
+}
 
 // Mode specifies the working mode of kcp
 type Mode int
+type XORFunc func(a, b []byte)
 
 const (
 	// MODE_DEFAULT slowest
@@ -526,21 +535,15 @@ func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
 
 // packet encryption with local CFB mode
 func encrypt(block cipher.Block, data []byte) {
-	var tbl [aes.BlockSize]byte
-	copy(tbl[:], initialVector)
-	block.Encrypt(tbl[:], tbl[:])
+	tbl := make([]byte, aes.BlockSize)
+	copy(tbl, initialVector)
+	block.Encrypt(tbl, tbl)
 	n := len(data) / aes.BlockSize
 	for i := 0; i < n; i++ {
 		base := i * aes.BlockSize
-		if supportsUnaligned {
-			fastXORWords(data[base:], tbl[:])
-		} else {
-			for j := 0; j < aes.BlockSize; j++ {
-				data[base+j] = data[base+j] ^ tbl[j]
-			}
-		}
-		copy(tbl[:], data[base:])
-		block.Encrypt(tbl[:], tbl[:])
+		xor(data[base:], tbl)
+		copy(tbl, data[base:])
+		block.Encrypt(tbl, tbl)
 	}
 
 	for j := n * aes.BlockSize; j < len(data); j++ {
@@ -549,24 +552,16 @@ func encrypt(block cipher.Block, data []byte) {
 }
 
 func decrypt(block cipher.Block, data []byte) {
-	var tbl [aes.BlockSize]byte
-	var next [aes.BlockSize]byte
-	copy(tbl[:], initialVector)
-	block.Encrypt(tbl[:], tbl[:])
+	tbl := make([]byte, aes.BlockSize)
+	next := make([]byte, aes.BlockSize)
+	copy(tbl, initialVector)
+	block.Encrypt(tbl, tbl)
 	n := len(data) / aes.BlockSize
 	for i := 0; i < n; i++ {
 		base := i * aes.BlockSize
-		copy(next[:], data[base:])
-		block.Encrypt(next[:], next[:])
-
-		if supportsUnaligned {
-			fastXORWords(data[base:], tbl[:])
-		} else {
-			for j := 0; j < aes.BlockSize; j++ {
-				data[base+j] = data[base+j] ^ tbl[j]
-			}
-		}
-		copy(tbl[:], next[:])
+		block.Encrypt(next, data[base:])
+		xor(data[base:], tbl)
+		copy(tbl, next)
 	}
 
 	for j := n * aes.BlockSize; j < len(data); j++ {
@@ -580,5 +575,12 @@ func fastXORWords(a, b []byte) {
 	n := len(b) / wordSize
 	for i := 0; i < n; i++ {
 		aw[i] = aw[i] ^ bw[i]
+	}
+}
+
+func safeXORBytes(a, b []byte) {
+	n := len(b)
+	for i := 0; i < n; i++ {
+		a[i] = a[i] ^ b[i]
 	}
 }

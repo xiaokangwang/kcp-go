@@ -8,7 +8,8 @@ import (
 )
 
 const port = "127.0.0.1:9999"
-const key = "testkey"
+
+var key = []byte("testkey")
 
 func server() {
 	l, err := ListenEncrypted(MODE_FAST, port, []byte(key))
