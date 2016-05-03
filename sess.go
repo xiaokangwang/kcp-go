@@ -86,7 +86,7 @@ type (
 func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
 	sess := new(UDPSession)
 	sess.chTicker = make(chan time.Time, 1)
-	sess.chUdpOutput = make(chan output_packet, 10)
+	sess.chUdpOutput = make(chan output_packet, defaultWndSize)
 	sess.die = make(chan struct{})
 	sess.local = conn.LocalAddr()
 	sess.chReadEvent = make(chan bool, 1)
