@@ -7,6 +7,7 @@ import (
 	"crypto/md5"
 	crand "crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"io"
 	"log"
@@ -408,8 +409,7 @@ func (l *Listener) monitor() {
 				addr := from.String()
 				s, ok := l.sessions[addr]
 				if !ok {
-					var conv uint32
-					ikcp_decode32u(data, &conv) // conversation id
+					conv := binary.LittleEndian.Uint32(data)
 					s := newUDPSession(conv, l.mode, l, l.conn, from, l.block)
 					s.kcpInput(data)
 					l.sessions[addr] = s
