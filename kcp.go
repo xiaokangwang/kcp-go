@@ -367,7 +367,7 @@ func (kcp *KCP) parse_data(newseg *Segment) {
 	}
 
 	n := len(kcp.rcv_buf) - 1
-	after_idx := -1
+	insert_idx := 0
 	repeat := false
 	for i := n; i >= 0; i-- {
 		seg := &kcp.rcv_buf[i]
@@ -376,16 +376,25 @@ func (kcp *KCP) parse_data(newseg *Segment) {
 			break
 		}
 		if _itimediff(sn, seg.sn) > 0 {
-			after_idx = i
+			insert_idx = i + 1
 			break
 		}
 	}
 
 	if !repeat {
-		if after_idx == -1 {
-			kcp.rcv_buf = append([]Segment{*newseg}, kcp.rcv_buf...)
+		if insert_idx == n+1 {
+			kcp.rcv_buf = append(kcp.rcv_buf, *newseg)
+		} else if insert_idx == 0 {
+			rcv_buf := make([]Segment, len(kcp.rcv_buf)+1)
+			rcv_buf[0] = *newseg
+			copy(rcv_buf[1:], kcp.rcv_buf)
+			kcp.rcv_buf = rcv_buf
 		} else {
-			kcp.rcv_buf = append(kcp.rcv_buf[:after_idx+1], append([]Segment{*newseg}, kcp.rcv_buf[after_idx+1:]...)...)
+			rcv_buf := make([]Segment, len(kcp.rcv_buf)+1)
+			copy(rcv_buf, kcp.rcv_buf[:insert_idx])
+			rcv_buf[insert_idx] = *newseg
+			copy(rcv_buf[insert_idx+1:], kcp.rcv_buf[insert_idx:])
+			kcp.rcv_buf = rcv_buf
 		}
 	}
 
