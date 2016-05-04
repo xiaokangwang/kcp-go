@@ -103,7 +103,12 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 		}
 	})
 	sess.kcp.WndSize(defaultWndSize, defaultWndSize)
-	sess.kcp.SetMtu(IKCP_MTU_DEF - headerSize)
+	if block != nil {
+		sess.kcp.SetMtu(IKCP_MTU_DEF - headerSize)
+	} else {
+		sess.kcp.SetMtu(IKCP_MTU_DEF)
+	}
+
 	switch mode {
 	case MODE_FAST:
 		sess.kcp.NoDelay(1, 10, 2, 1)
