@@ -435,12 +435,10 @@ func (l *Listener) monitor() {
 }
 
 func (l *Listener) receiver(ch chan packet) {
-	buffer := make([]byte, 4096)
 	for {
-		if n, from, err := l.conn.ReadFromUDP(buffer); err == nil && n >= IKCP_OVERHEAD {
-			data := make([]byte, n)
-			copy(data, buffer)
-			ch <- packet{from, data}
+		data := make([]byte, 4096)
+		if n, from, err := l.conn.ReadFromUDP(data); err == nil && n >= IKCP_OVERHEAD {
+			ch <- packet{from, data[:n]}
 		} else {
 			return
 		}
