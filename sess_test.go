@@ -170,7 +170,7 @@ func client4(wg *sync.WaitGroup) {
 	if err != nil {
 		panic(err)
 	}
-	const N = 1000
+	const N = 100
 	buf := make([]byte, 10)
 	for i := 0; i < N; i++ {
 		msg := fmt.Sprintf("hello%v", i)
@@ -178,6 +178,7 @@ func client4(wg *sync.WaitGroup) {
 		if _, err := cli.Read(buf); err != nil {
 			break
 		}
+		<-time.After(10 * time.Millisecond)
 	}
 	cli.Close()
 	wg.Done()
