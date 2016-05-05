@@ -55,7 +55,6 @@ const (
 	basePort       = 20000 // minimum port for listening
 	maxPort        = 65535 // maximum port for listening
 	defaultWndSize = 128   // default window size, in packet
-	deadlink       = 50    // max retransmissions for a segment before the we close the link
 	headerSize     = aes.BlockSize + md5.Size
 )
 
@@ -105,7 +104,6 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 		}
 	})
 	sess.kcp.WndSize(defaultWndSize, defaultWndSize)
-	sess.kcp.dead_link = deadlink
 	if block != nil {
 		sess.kcp.SetMtu(IKCP_MTU_DEF - headerSize)
 	} else {
@@ -253,6 +251,13 @@ func (s *UDPSession) SetMtu(mtu int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.kcp.SetMtu(mtu)
+}
+
+// SetRetries sets the maximum RTO retries;default is 10
+func (s *UDPSession) SetRetries(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.kcp.dead_link = uint32(n)
 }
 
 func (s *UDPSession) outputTask() {
