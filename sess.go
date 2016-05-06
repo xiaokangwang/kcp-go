@@ -464,7 +464,7 @@ func (l *Listener) Accept() (*UDPSession, error) {
 	}
 }
 
-// Close stops listening on the TCP address. Already Accepted connections are not closed.
+// Close stops listening on the UDP address. Already Accepted connections are not closed.
 func (l *Listener) Close() error {
 	if err := l.conn.Close(); err == nil {
 		close(l.die)
