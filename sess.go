@@ -258,7 +258,7 @@ func (s *UDPSession) SetMtu(mtu int) {
 // SetRetries influences the timeout of an alive KCP connection,
 // when RTO retransmissions remain unacknowledged.
 // default is 10, the total timeout is calculated as:
-// 0.5*(1+2+...+10) * 200ms = 200 * 0.5 * 10*(1+10)/2 = 5.5s
+// (1+1.5+...+5.5) * 200ms = 200ms * 10 * (2*1 +(10-1)*0.5)/2 = 6.5s
 func (s *UDPSession) SetRetries(n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
