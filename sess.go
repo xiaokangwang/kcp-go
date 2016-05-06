@@ -255,7 +255,7 @@ func (s *UDPSession) SetMtu(mtu int) {
 	s.kcp.SetMtu(mtu)
 }
 
-// SetRetries influences the timeout of an alive TCP connection,
+// SetRetries influences the timeout of an alive KCP connection,
 // when RTO retransmissions remain unacknowledged.
 // default is 10, the total timeout is calculated as:
 // 0.5*(1+2+...+10) * 200ms = 200 * 0.5 * 10*(1+10)/2 = 5.5s
