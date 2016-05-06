@@ -35,12 +35,14 @@ func init() {
 
 // Mode specifies the working mode of kcp
 type Mode int
+
+// XORFunc is the prototype of an xor function for cryptography
 type XORFunc func(a, b []byte)
 
 const (
 	// MODE_DEFAULT slowest
 	MODE_DEFAULT Mode = iota
-	// MODE_DEFAULT normal kcp mode, faster
+	// MODE_NORMAL normal kcp mode, faster
 	MODE_NORMAL
 	// MODE_FAST fastest mode
 	MODE_FAST
@@ -74,7 +76,7 @@ type (
 		mu            sync.Mutex
 		chReadEvent   chan bool
 		chTicker      chan time.Time
-		chUdpOutput   chan []byte
+		chUDPOutput   chan []byte
 	}
 )
 
@@ -82,7 +84,7 @@ type (
 func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
 	sess := new(UDPSession)
 	sess.chTicker = make(chan time.Time, 1)
-	sess.chUdpOutput = make(chan []byte, defaultWndSize)
+	sess.chUDPOutput = make(chan []byte, defaultWndSize)
 	sess.die = make(chan struct{})
 	sess.local = conn.LocalAddr()
 	sess.chReadEvent = make(chan bool, 1)
@@ -95,11 +97,11 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 			if sess.block != nil {
 				ext := make([]byte, headerSize+size)
 				copy(ext[headerSize:], buf)
-				sess.chUdpOutput <- ext
+				sess.chUDPOutput <- ext
 			} else {
 				ext := make([]byte, size)
 				copy(ext, buf)
-				sess.chUdpOutput <- ext
+				sess.chUDPOutput <- ext
 			}
 		}
 	})
@@ -253,7 +255,10 @@ func (s *UDPSession) SetMtu(mtu int) {
 	s.kcp.SetMtu(mtu)
 }
 
-// SetRetries sets the maximum RTO retries;default is 10
+// SetRetries influences the timeout of an alive TCP connection,
+// when RTO retransmissions remain unacknowledged.
+// default is 10, the total timeout is calculated as:
+// 0.5*(1+2+...+10) * 200ms = 200 * 0.5 * 10*(1+10)/2 = 5.5s
 func (s *UDPSession) SetRetries(n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -263,7 +268,7 @@ func (s *UDPSession) SetRetries(n int) {
 func (s *UDPSession) outputTask() {
 	for {
 		select {
-		case ext := <-s.chUdpOutput:
+		case ext := <-s.chUDPOutput:
 			if s.block != nil {
 				io.ReadFull(crand.Reader, ext[:aes.BlockSize]) // OTP
 				checksum := md5.Sum(ext[headerSize:])
@@ -396,20 +401,20 @@ func (l *Listener) monitor() {
 		case p := <-chPacket:
 			data := p.data
 			from := p.from
-			data_valid := false
+			dataValid := false
 			if l.block != nil && len(data) >= IKCP_OVERHEAD+headerSize {
 				decrypt(l.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
 				if bytes.Equal(checksum[:], data[:md5.Size]) {
 					data = data[md5.Size:]
-					data_valid = true
+					dataValid = true
 				}
 			} else if l.block == nil {
-				data_valid = true
+				dataValid = true
 			}
 
-			if data_valid {
+			if dataValid {
 				addr := from.String()
 				s, ok := l.sessions[addr]
 				if !ok {
