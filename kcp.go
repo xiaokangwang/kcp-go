@@ -20,7 +20,7 @@ const (
 	IKCP_ACK_FAST    = 3
 	IKCP_INTERVAL    = 100
 	IKCP_OVERHEAD    = 24
-	IKCP_DEADLINK    = 10
+	IKCP_DEADLINK    = 20
 	IKCP_THRESH_INIT = 2
 	IKCP_THRESH_MIN  = 2
 	IKCP_PROBE_INIT  = 7000   // 7 secs to probe window size
