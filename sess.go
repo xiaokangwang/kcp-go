@@ -252,7 +252,11 @@ func (s *UDPSession) SetWindowSize(sndwnd, rcvwnd int) {
 func (s *UDPSession) SetMtu(mtu int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.kcp.SetMtu(mtu)
+	if s.block != nil {
+		s.kcp.SetMtu(mtu - headerSize)
+	} else {
+		s.kcp.SetMtu(mtu)
+	}
 }
 
 // SetRetries influences the timeout of an alive KCP connection,
