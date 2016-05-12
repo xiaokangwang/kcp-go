@@ -556,8 +556,7 @@ func encrypt(block cipher.Block, data []byte) {
 	for i := 0; i < n; i++ {
 		base := i * aes.BlockSize
 		xor(data[base:], tbl)
-		copy(tbl, data[base:])
-		block.Encrypt(tbl, tbl)
+		block.Encrypt(tbl, data[base:])
 	}
 
 	for j := n * aes.BlockSize; j < len(data); j++ {
