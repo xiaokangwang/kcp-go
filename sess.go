@@ -134,7 +134,7 @@ func (s *UDPSession) Read(b []byte) (n int, err error) {
 	for {
 		s.mu.Lock()
 		if len(s.sockbuff) > 0 { // copy from buffer
-			n := copy(b, s.sockbuff)
+			n = copy(b, s.sockbuff)
 			s.sockbuff = s.sockbuff[n:]
 			s.mu.Unlock()
 			return n, nil
@@ -153,13 +153,16 @@ func (s *UDPSession) Read(b []byte) (n int, err error) {
 		}
 
 		if n := s.kcp.PeekSize(); n > 0 { // data arrived
-			buf := make([]byte, n)
-			if s.kcp.Recv(buf) > 0 { // if Recv() succeeded
-				n := copy(b, buf)
+			if len(b) >= n {
+				s.kcp.Recv(b)
+			} else {
+				buf := make([]byte, n)
+				s.kcp.Recv(buf)
+				n = copy(b, buf)
 				s.sockbuff = buf[n:] // store remaining bytes into sockbuff for next read
-				s.mu.Unlock()
-				return n, nil
 			}
+			s.mu.Unlock()
+			return n, nil
 		}
 		s.mu.Unlock()
 
