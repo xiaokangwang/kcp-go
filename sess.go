@@ -511,7 +511,7 @@ func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
 	l.chAccepts = make(chan *UDPSession, 1024)
 	l.chDeadlinks = make(chan net.Addr, 1024)
 	l.die = make(chan struct{})
-	if key != nil {
+	if key != nil && len(key) > 0 {
 		pass := sha256.Sum256(key)
 		if block, err := aes.NewCipher(pass[:]); err == nil {
 			l.block = block
@@ -538,7 +538,7 @@ func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
 	for {
 		port := basePort + rand.Int()%(maxPort-basePort)
 		if udpconn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port}); err == nil {
-			if key != nil {
+			if key != nil && len(key) > 0 {
 				pass := sha256.Sum256(key)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
 					return newUDPSession(rand.Uint32(), mode, nil, udpconn, udpaddr, block), nil
