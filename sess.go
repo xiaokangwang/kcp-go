@@ -576,7 +576,7 @@ func decrypt(block cipher.Block, data []byte) {
 		base := i * aes.BlockSize
 		block.Encrypt(next, data[base:])
 		xor(data[base:], tbl)
-		copy(tbl, next)
+		tbl, next = next, tbl
 	}
 
 	for j := n * aes.BlockSize; j < len(data); j++ {
