@@ -556,13 +556,14 @@ func encrypt(block cipher.Block, data []byte) {
 	tbl := make([]byte, aes.BlockSize)
 	block.Encrypt(tbl, initialVector)
 	n := len(data) / aes.BlockSize
+	base := 0
 	for i := 0; i < n; i++ {
-		base := i * aes.BlockSize
 		xor(data[base:], tbl)
 		block.Encrypt(tbl, data[base:])
+		base += aes.BlockSize
 	}
 
-	for j := n * aes.BlockSize; j < len(data); j++ {
+	for j := base; j < len(data); j++ {
 		data[j] = data[j] ^ tbl[j%aes.BlockSize]
 	}
 }
@@ -572,14 +573,15 @@ func decrypt(block cipher.Block, data []byte) {
 	next := make([]byte, aes.BlockSize)
 	block.Encrypt(tbl, initialVector)
 	n := len(data) / aes.BlockSize
+	base := 0
 	for i := 0; i < n; i++ {
-		base := i * aes.BlockSize
 		block.Encrypt(next, data[base:])
 		xor(data[base:], tbl)
 		tbl, next = next, tbl
+		base += aes.BlockSize
 	}
 
-	for j := n * aes.BlockSize; j < len(data); j++ {
+	for j := base; j < len(data); j++ {
 		data[j] = data[j] ^ tbl[j%aes.BlockSize]
 	}
 }
