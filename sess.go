@@ -40,12 +40,10 @@ type Mode int
 type XORFunc func(a, b []byte)
 
 const (
-	// MODE_DEFAULT slowest
 	MODE_DEFAULT Mode = iota
-	// MODE_NORMAL normal kcp mode, faster
 	MODE_NORMAL
-	// MODE_FAST fastest mode
 	MODE_FAST
+	MODE_FAST2
 )
 
 const (
@@ -113,12 +111,14 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 	}
 
 	switch mode {
-	case MODE_FAST:
+	case MODE_FAST2:
 		sess.kcp.NoDelay(1, 10, 2, 1)
+	case MODE_FAST:
+		sess.kcp.NoDelay(1, 20, 2, 1)
 	case MODE_NORMAL:
 		sess.kcp.NoDelay(0, 20, 0, 1)
 	default:
-		sess.kcp.NoDelay(0, 40, 0, 0)
+		sess.kcp.NoDelay(0, 20, 0, 0)
 	}
 
 	go sess.updateTask()
