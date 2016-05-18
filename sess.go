@@ -343,7 +343,7 @@ func (s *UDPSession) notifyReadEvent() {
 func (s *UDPSession) kcpInput(data []byte) {
 	s.mu.Lock()
 	n := s.kcp.Input(data)
-	s.kcp.Flush()
+	s.needUpdate = true
 	s.mu.Unlock()
 	if n == 0 {
 		s.notifyReadEvent()
