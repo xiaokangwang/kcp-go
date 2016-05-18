@@ -195,7 +195,7 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 			b = b[max:]
 		}
 	}
-	s.kcp.flush()
+	s.kcp.Flush()
 	return
 }
 
@@ -341,7 +341,7 @@ func (s *UDPSession) notifyReadEvent() {
 func (s *UDPSession) kcpInput(data []byte) {
 	s.mu.Lock()
 	n := s.kcp.Input(data)
-	s.kcp.flush()
+	s.kcp.Flush()
 	s.mu.Unlock()
 	if n == 0 {
 		s.notifyReadEvent()

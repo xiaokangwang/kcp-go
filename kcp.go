@@ -521,8 +521,8 @@ func (kcp *KCP) wnd_unused() int32 {
 	return 0
 }
 
-// flush pending data
-func (kcp *KCP) flush() {
+// Flush pending data
+func (kcp *KCP) Flush() {
 	current := kcp.current
 	buffer := kcp.buffer
 	change := 0
@@ -744,7 +744,7 @@ func (kcp *KCP) Update(current uint32) {
 		if _itimediff(kcp.current, kcp.ts_flush) >= 0 {
 			kcp.ts_flush = kcp.current + kcp.interval
 		}
-		kcp.flush()
+		kcp.Flush()
 	}
 }
 
