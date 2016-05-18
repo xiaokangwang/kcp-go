@@ -70,7 +70,6 @@ type (
 		sockbuff      []byte    // kcp receiving is based on packet, I turn it into stream
 		die           chan struct{}
 		isClosed      bool
-		needUpdate    bool
 		mu            sync.Mutex
 		chReadEvent   chan bool
 		chTicker      chan time.Time
@@ -196,7 +195,7 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 			b = b[max:]
 		}
 	}
-	s.needUpdate = true
+	s.kcp.flush()
 	return
 }
 
@@ -309,11 +308,10 @@ func (s *UDPSession) updateTask() {
 		case now := <-tc:
 			current := uint32(now.UnixNano() / int64(time.Millisecond))
 			s.mu.Lock()
-			if current >= nextupdate || s.needUpdate {
+			if current >= nextupdate {
 				s.kcp.Update(current)
 				nextupdate = s.kcp.Check(current)
 			}
-			s.needUpdate = false
 			state := s.kcp.state
 			s.mu.Unlock()
 			if state != 0 { // deadlink
@@ -343,7 +341,7 @@ func (s *UDPSession) notifyReadEvent() {
 func (s *UDPSession) kcpInput(data []byte) {
 	s.mu.Lock()
 	n := s.kcp.Input(data)
-	s.needUpdate = true
+	s.kcp.flush()
 	s.mu.Unlock()
 	if n == 0 {
 		s.notifyReadEvent()
