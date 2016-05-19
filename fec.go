@@ -1,10 +1,19 @@
 package kcp
 
+import "encoding/binary"
+
 // FEC defines forward error correction for a KCP connection
 type FEC struct {
-	kcp       *KCP
-	rcv_queue [][]byte
-	size      int // fec group size
+	kcp     *KCP
+	packets []fecPacket
+	size    int // fec group size
+}
+
+type fecPacket struct {
+	seqid  uint32
+	length uint16
+	hasFec uint16
+	date   []byte
 }
 
 func newFEC(kcp *KCP, size int) *FEC {
@@ -18,11 +27,19 @@ func newFEC(kcp *KCP, size int) *FEC {
 	return fec
 }
 
-func (fec *FEC) try_correct(data []byte) []byte {
+func (fec *FEC) decode(data []byte) fecPacket {
+	var packet fecPacket
+	packet.seqid = binary.LittleEndian.Uint32(data)
+	packet.length = binary.LittleEndian.Uint16(data[4:])
+	packet.hasFec = binary.LittleEndian.Uint16(data[6:])
+	return packet
+}
+
+func (fec *FEC) input(data []byte) []byte {
 	return nil
 }
 
-func (fec *FEC) output(data ...[]byte) []byte {
+func (fec *FEC) generate(data ...[]byte) []byte {
 	if len(data) != fec.size {
 		return nil
 	}
