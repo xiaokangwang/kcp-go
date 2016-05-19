@@ -13,42 +13,24 @@ import (
 	"log"
 	"math/rand"
 	"net"
-	"runtime"
 	"sync"
 	"time"
-	"unsafe"
 )
 
 var (
 	errTimeout    = errors.New("i/o timeout")
 	errBrokenPipe = errors.New("broken pipe")
 	initialVector = []byte{167, 115, 79, 156, 18, 172, 27, 1, 164, 21, 242, 193, 252, 120, 230, 107}
-	xor           XORFunc
 )
-
-func init() {
-	xor = safeXORBytes
-	if supportsUnaligned {
-		xor = fastXORWords
-	}
-}
 
 // Mode specifies the working mode of kcp
 type Mode int
-
-// XORFunc is the prototype of an xor function for cryptography
-type XORFunc func(a, b []byte)
 
 const (
 	MODE_DEFAULT Mode = iota
 	MODE_NORMAL
 	MODE_FAST
 	MODE_FAST2
-)
-
-const (
-	wordSize          = int(unsafe.Sizeof(uintptr(0)))
-	supportsUnaligned = runtime.GOARCH == "386" || runtime.GOARCH == "amd64"
 )
 
 const (
@@ -556,14 +538,11 @@ func encrypt(block cipher.Block, data []byte) {
 	n := len(data) / aes.BlockSize
 	base := 0
 	for i := 0; i < n; i++ {
-		xor(data[base:], tbl)
+		xorBytes(data[base:], data[base:], tbl)
 		block.Encrypt(tbl, data[base:])
 		base += aes.BlockSize
 	}
-
-	for j := base; j < len(data); j++ {
-		data[j] = data[j] ^ tbl[j%aes.BlockSize]
-	}
+	xorBytes(data[base:], data[base:], tbl)
 }
 
 func decrypt(block cipher.Block, data []byte) {
@@ -574,30 +553,11 @@ func decrypt(block cipher.Block, data []byte) {
 	base := 0
 	for i := 0; i < n; i++ {
 		block.Encrypt(next, data[base:])
-		xor(data[base:], tbl)
+		xorBytes(data[base:], data[base:], tbl)
 		tbl, next = next, tbl
 		base += aes.BlockSize
 	}
-
-	for j := base; j < len(data); j++ {
-		data[j] = data[j] ^ tbl[j%aes.BlockSize]
-	}
-}
-
-func fastXORWords(a, b []byte) {
-	aw := *(*[]uintptr)(unsafe.Pointer(&a))
-	bw := *(*[]uintptr)(unsafe.Pointer(&b))
-	n := len(b) / wordSize
-	for i := 0; i < n; i++ {
-		aw[i] = aw[i] ^ bw[i]
-	}
-}
-
-func safeXORBytes(a, b []byte) {
-	n := len(b)
-	for i := 0; i < n; i++ {
-		a[i] = a[i] ^ b[i]
-	}
+	xorBytes(data[base:], data[base:], tbl)
 }
 
 func currentMs() uint32 {
