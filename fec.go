@@ -4,7 +4,6 @@ package kcp
 type FEC struct {
 	kcp       *KCP
 	rcv_queue [][]byte
-	snd_queue [][]byte
 	size      int // fec group size
 }
 
@@ -19,19 +18,21 @@ func newFEC(kcp *KCP, size int) *FEC {
 	return fec
 }
 
-func (fec *FEC) correct(data []byte) []byte {
+func (fec *FEC) try_correct(data []byte) []byte {
 	return nil
 }
 
-func (fec *FEC) calc(data ...[]byte) []byte {
+func (fec *FEC) output(data ...[]byte) []byte {
 	if len(data) != fec.size {
 		return nil
 	}
-	code := make([]byte, fec.maxlength(data...))
-	xorBytes(data[0], data[0], data[1])
+
+	code := make([]byte, fec.maxlength(data...)+fecHeaderSize)
+	xorBytes(code, data[0], data[1])
 	for i := 2; i < len(data); i++ {
 		xorBytes(code, code, data[i])
 	}
+
 	return code
 }
 
