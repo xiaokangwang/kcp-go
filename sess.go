@@ -38,7 +38,6 @@ const (
 	maxPort        = 65535 // maximum port for listening
 	defaultWndSize = 128   // default window size, in packet
 	headerSize     = aes.BlockSize + md5.Size
-	fecHeaderSize  = 8
 )
 
 type (
