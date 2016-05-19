@@ -28,6 +28,10 @@ func (fec *FEC) calc(data ...[]byte) []byte {
 		return nil
 	}
 	code := make([]byte, fec.maxlength(data...))
+	xorBytes(data[0], data[0], data[1])
+	for i := 2; i < len(data); i++ {
+		xorBytes(code, code, data[i])
+	}
 	return code
 }
 
