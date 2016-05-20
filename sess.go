@@ -1,14 +1,13 @@
 package kcp
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/md5"
 	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"hash/crc64"
 	"io"
 	"log"
 	"math/rand"
@@ -37,7 +36,7 @@ const (
 	basePort       = 20000 // minimum port for listening
 	maxPort        = 65535 // maximum port for listening
 	defaultWndSize = 128   // default window size, in packet
-	headerSize     = aes.BlockSize + md5.Size
+	headerSize     = aes.BlockSize + crc64.Size
 )
 
 type (
@@ -57,6 +56,7 @@ type (
 		chTicker      chan time.Time
 		chUDPOutput   chan []byte
 		fec           *FEC
+		crctbl        *crc64.Table
 	}
 )
 
@@ -72,6 +72,7 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 	sess.conn = conn
 	sess.l = l
 	sess.block = block
+	sess.crctbl = crc64.MakeTable(crc64.ECMA)
 	if fec > 1 {
 		sess.fec = newFEC(fec, 128)
 	}
@@ -293,8 +294,8 @@ func (s *UDPSession) outputTask() {
 
 			if s.block != nil {
 				io.ReadFull(crand.Reader, ext[:aes.BlockSize]) // OTP
-				checksum := md5.Sum(ext[headerSize:])
-				copy(ext[aes.BlockSize:], checksum[:])
+				checksum := crc64.Checksum(ext[headerSize:], s.crctbl)
+				binary.LittleEndian.PutUint64(ext[aes.BlockSize:], checksum)
 				encrypt(s.block, ext)
 			}
 
@@ -305,11 +306,12 @@ func (s *UDPSession) outputTask() {
 			}
 			//}
 
+			// output ecc
 			if ecc != nil {
 				if s.block != nil {
 					io.ReadFull(crand.Reader, ecc[:aes.BlockSize]) // OTP
-					checksum := md5.Sum(ecc[headerSize:])
-					copy(ecc[aes.BlockSize:], checksum[:])
+					checksum := crc64.Checksum(ext[headerSize:], s.crctbl)
+					binary.LittleEndian.PutUint64(ext[aes.BlockSize:], checksum)
 					encrypt(s.block, ecc)
 				}
 				n, err := s.conn.WriteTo(ecc, s.remote)
@@ -403,9 +405,9 @@ func (s *UDPSession) readLoop() {
 			if s.block != nil && n >= IKCP_OVERHEAD+headerSize {
 				decrypt(s.block, data)
 				data = data[aes.BlockSize:]
-				checksum := md5.Sum(data[md5.Size:])
-				if bytes.Equal(checksum[:], data[:md5.Size]) {
-					data = data[md5.Size:]
+				checksum := crc64.Checksum(data[crc64.Size:], s.crctbl)
+				if checksum == binary.LittleEndian.Uint64(data) {
+					data = data[crc64.Size:]
 					dataValid = true
 				}
 			} else if s.block == nil {
@@ -432,6 +434,7 @@ type (
 		chAccepts   chan *UDPSession
 		chDeadlinks chan net.Addr
 		die         chan struct{}
+		crctbl      *crc64.Table
 	}
 
 	packet struct {
@@ -455,9 +458,9 @@ func (l *Listener) monitor() {
 			if l.block != nil && len(data) >= IKCP_OVERHEAD+headerSize {
 				decrypt(l.block, data)
 				data = data[aes.BlockSize:]
-				checksum := md5.Sum(data[md5.Size:])
-				if bytes.Equal(checksum[:], data[:md5.Size]) {
-					data = data[md5.Size:]
+				checksum := crc64.Checksum(data[crc64.Size:], l.crctbl)
+				if checksum == binary.LittleEndian.Uint64(data) {
+					data = data[crc64.Size:]
 					dataValid = true
 				}
 			} else if l.block == nil {
@@ -557,6 +560,7 @@ func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
 	l.chAccepts = make(chan *UDPSession, 1024)
 	l.chDeadlinks = make(chan net.Addr, 1024)
 	l.die = make(chan struct{})
+	l.crctbl = crc64.MakeTable(crc64.ECMA)
 	if key != nil && len(key) > 0 {
 		pass := sha256.Sum256(key)
 		if block, err := aes.NewCipher(pass[:]); err == nil {
