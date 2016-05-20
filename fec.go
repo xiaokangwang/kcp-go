@@ -1,6 +1,9 @@
 package kcp
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"time"
+)
 
 const (
 	fecHeaderSize = 6
@@ -10,10 +13,11 @@ const (
 
 // FEC defines forward error correction for packets
 type FEC struct {
-	rx      []fecPacket // orderedr rx queue
-	rxlimit int
-	cluster int // fec cluster size
-	seqid   uint32
+	rx        []fecPacket // orderedr rx queue
+	rxlimit   int         // queue size limit
+	cluster   int         // fec cluster size
+	next      uint32      // next seqid
+	lastclean time.Time   // last rx clean time
 }
 
 type fecPacket struct {
@@ -48,15 +52,15 @@ func fecDecode(data []byte) fecPacket {
 // add header data of FEC, invoker must keep data[:fecHeaderSize] free
 // no allocations will be made by fec module
 func (fec *FEC) markData(data []byte) {
-	binary.LittleEndian.PutUint32(data, fec.seqid)
+	binary.LittleEndian.PutUint32(data, fec.next)
 	binary.LittleEndian.PutUint16(data[4:], typeData)
-	fec.seqid++
+	fec.next++
 }
 
 func (fec *FEC) markFEC(data []byte) {
-	binary.LittleEndian.PutUint32(data, fec.seqid)
+	binary.LittleEndian.PutUint32(data, fec.next)
 	binary.LittleEndian.PutUint16(data[4:], typeFEC)
-	fec.seqid++
+	fec.next++
 }
 
 // input a fec packet
@@ -120,6 +124,11 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 		fec.rx = fec.rx[1:]
 	}
 
+	// prevention of seqid overflow
+	if time.Now().Sub(fec.lastclean) > time.Hour {
+		fec.rx = nil
+		fec.lastclean = time.Now()
+	}
 	return recovered
 }
 
