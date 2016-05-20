@@ -74,7 +74,7 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 	sess.l = l
 	sess.block = block
 	if fec > 1 {
-		sess.fec = newFEC(fec, 128)
+		sess.fec = newFEC(fec, 4096)
 	}
 
 	sess.kcp = NewKCP(conv, func(buf []byte, size int) {
