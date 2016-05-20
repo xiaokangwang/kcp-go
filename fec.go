@@ -1,24 +1,21 @@
 package kcp
 
-import (
-	"encoding/binary"
-	"time"
-)
+import "encoding/binary"
 
 const (
 	fecHeaderSize      = 6
 	fecHeaderSizePlus2 = fecHeaderSize + 2 // plus 2B data size
+	fecOverflow        = 1e7
 	typeData           = 0
 	typeFEC            = 1<<16 - 1
 )
 
 // FEC defines forward error correction for packets
 type FEC struct {
-	rx        []fecPacket // orderedr rx queue
-	rxlimit   int         // queue size limit
-	cluster   int         // fec cluster size
-	next      uint32      // next seqid
-	lastclean time.Time   // last rx clean time
+	rx      []fecPacket // orderedr rx queue
+	rxlimit int         // queue size limit
+	cluster int         // fec cluster size
+	next    uint32      // next seqid
 }
 
 type fecPacket struct {
@@ -118,15 +115,17 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 		}
 	}
 
+	// prevention of seqid overflows uint32
+	if len(fec.rx) >= 2 {
+		n := len(fec.rx) - 1
+		if int64(fec.rx[n].seqid)-int64(fec.rx[0].seqid) > fecOverflow {
+			fec.rx = nil
+		}
+	}
+
 	// keep rxlen
 	if len(fec.rx) > fec.rxlimit {
 		fec.rx = fec.rx[1:]
-	}
-
-	// prevention of seqid overflow
-	if time.Now().Sub(fec.lastclean) > time.Hour {
-		fec.rx = nil
-		fec.lastclean = time.Now()
 	}
 	return recovered
 }
