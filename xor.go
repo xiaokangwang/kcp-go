@@ -15,6 +15,9 @@ func fastXORBytes(dst, a, b []byte) int {
 	if len(b) < n {
 		n = len(b)
 	}
+	if len(dst) < n {
+		n = len(dst)
+	}
 
 	w := n / wordSize
 	if w > 0 {
@@ -37,6 +40,9 @@ func safeXORBytes(dst, a, b []byte) int {
 	n := len(a)
 	if len(b) < n {
 		n = len(b)
+	}
+	if len(dst) < n {
+		n = len(dst)
 	}
 	for i := 0; i < n; i++ {
 		dst[i] = a[i] ^ b[i]
