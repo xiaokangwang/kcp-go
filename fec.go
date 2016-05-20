@@ -36,10 +36,12 @@ func newFEC(cluster, rxlimit int) *FEC {
 // decode a fec packet
 func fecDecode(data []byte) fecPacket {
 	var pkt fecPacket
-	pkt.seqid = binary.LittleEndian.Uint32(data)
-	pkt.isfec = binary.LittleEndian.Uint16(data[4:])
-	pkt.data = make([]byte, len(data[fecHeaderSize:]))
-	copy(pkt.data, data[fecHeaderSize:])
+	buf := make([]byte, len(data))
+	copy(buf, data)
+
+	pkt.seqid = binary.LittleEndian.Uint32(buf)
+	pkt.isfec = binary.LittleEndian.Uint16(buf[4:])
+	pkt.data = buf[6:]
 	return pkt
 }
 
