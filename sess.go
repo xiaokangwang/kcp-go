@@ -297,9 +297,12 @@ func (s *UDPSession) outputTask() {
 				copy(ext[aes.BlockSize:], checksum[:])
 				encrypt(s.block, ext)
 			}
-			n, err := s.conn.WriteTo(ext, s.remote)
-			if err != nil {
-				log.Println(err, n)
+
+			if rand.Intn(100) < 90 {
+				n, err := s.conn.WriteTo(ext, s.remote)
+				if err != nil {
+					log.Println(err, n)
+				}
 			}
 
 			if ecc != nil {
@@ -374,26 +377,18 @@ func (s *UDPSession) kcpInput(data []byte) {
 	if s.fec != nil {
 		if f.isfec == typeData {
 			s.kcp.Input(f.data[2:])
+			s.fec.input(f)
+		} else if f.isfec == typeFEC {
+			if ecc := s.fec.input(f); ecc != nil {
+				sz := binary.LittleEndian.Uint16(ecc)
+				s.kcp.Input(ecc[2:sz])
+			}
 		}
 	} else {
 		s.kcp.Input(data)
 	}
 	s.kcp.Update(ms)
 	s.mu.Unlock()
-
-	if s.fec != nil {
-		if f.isfec == typeData {
-			s.fec.input(f)
-		} else if f.isfec == typeFEC {
-			if ecc := s.fec.input(f); ecc != nil {
-				sz := binary.LittleEndian.Uint16(ecc)
-				s.mu.Lock()
-				s.kcp.Input(ecc[2:sz])
-				s.kcp.Update(ms)
-				s.mu.Unlock()
-			}
-		}
-	}
 	s.notifyReadEvent()
 }
 
