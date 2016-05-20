@@ -604,7 +604,7 @@ func encrypt(block cipher.Block, data []byte) {
 	n := len(data) / aes.BlockSize
 	base := 0
 	for i := 0; i < n; i++ {
-		xorBytes(data[base:], data[base:], tbl)
+		xorWords(data[base:], data[base:], tbl)
 		block.Encrypt(tbl, data[base:])
 		base += aes.BlockSize
 	}
@@ -619,7 +619,7 @@ func decrypt(block cipher.Block, data []byte) {
 	base := 0
 	for i := 0; i < n; i++ {
 		block.Encrypt(next, data[base:])
-		xorBytes(data[base:], data[base:], tbl)
+		xorWords(data[base:], data[base:], tbl)
 		tbl, next = next, tbl
 		base += aes.BlockSize
 	}
