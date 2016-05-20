@@ -37,7 +37,7 @@ const (
 	basePort       = 20000 // minimum port for listening
 	maxPort        = 65535 // maximum port for listening
 	defaultWndSize = 128   // default window size, in packet
-	headerSize     = aes.BlockSize + md5.Size
+	cryptSize      = aes.BlockSize + md5.Size
 )
 
 type (
@@ -57,6 +57,7 @@ type (
 		chTicker      chan time.Time
 		chUDPOutput   chan []byte
 		fec           *FEC
+		headerSize    int
 	}
 )
 
@@ -76,27 +77,23 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 		sess.fec = newFEC(fec, 128)
 	}
 
+	// caculate header size
+	if sess.block != nil {
+		sess.headerSize += cryptSize
+	}
+	if sess.fec != nil {
+		sess.headerSize += fecHeaderSize + 2 // 2B extra size
+	}
+
 	sess.kcp = NewKCP(conv, func(buf []byte, size int) {
 		if size >= IKCP_OVERHEAD {
-			hs := 0
-			if sess.block != nil {
-				hs += headerSize
-			}
-
-			if sess.fec != nil {
-				hs += fecHeaderSize + 2 // 2B extra size
-			}
-			ext := make([]byte, hs+size)
-			copy(ext[hs:], buf)
+			ext := make([]byte, sess.headerSize+size)
+			copy(ext[sess.headerSize:], buf)
 			sess.chUDPOutput <- ext
 		}
 	})
 	sess.kcp.WndSize(defaultWndSize, defaultWndSize)
-	if block != nil {
-		sess.kcp.SetMtu(IKCP_MTU_DEF - headerSize)
-	} else {
-		sess.kcp.SetMtu(IKCP_MTU_DEF)
-	}
+	sess.kcp.SetMtu(IKCP_MTU_DEF - sess.headerSize)
 
 	switch mode {
 	case MODE_FAST2:
@@ -243,11 +240,7 @@ func (s *UDPSession) SetWindowSize(sndwnd, rcvwnd int) {
 func (s *UDPSession) SetMtu(mtu int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.block != nil {
-		s.kcp.SetMtu(mtu - headerSize)
-	} else {
-		s.kcp.SetMtu(mtu)
-	}
+	s.kcp.SetMtu(mtu - s.headerSize)
 }
 
 // SetRetries influences the timeout of an alive KCP connection,
@@ -263,7 +256,7 @@ func (s *UDPSession) SetRetries(n int) {
 func (s *UDPSession) outputTask() {
 	fecOffset := 0
 	if s.fec != nil && s.block != nil {
-		fecOffset = headerSize
+		fecOffset = cryptSize
 	}
 
 	var fec_group [][]byte
@@ -293,7 +286,7 @@ func (s *UDPSession) outputTask() {
 
 			if s.block != nil {
 				io.ReadFull(crand.Reader, ext[:aes.BlockSize]) // OTP
-				checksum := md5.Sum(ext[headerSize:])
+				checksum := md5.Sum(ext[cryptSize:])
 				copy(ext[aes.BlockSize:], checksum[:])
 				encrypt(s.block, ext)
 			}
@@ -308,7 +301,7 @@ func (s *UDPSession) outputTask() {
 			if ecc != nil {
 				if s.block != nil {
 					io.ReadFull(crand.Reader, ecc[:aes.BlockSize]) // OTP
-					checksum := md5.Sum(ecc[headerSize:])
+					checksum := md5.Sum(ecc[cryptSize:])
 					copy(ecc[aes.BlockSize:], checksum[:])
 					encrypt(s.block, ecc)
 				}
@@ -372,7 +365,6 @@ func (s *UDPSession) notifyReadEvent() {
 
 func (s *UDPSession) kcpInput(data []byte) {
 	f := fecDecode(data)
-	ms := currentMs()
 	s.mu.Lock()
 	if s.fec != nil {
 		if f.isfec == typeData {
@@ -387,7 +379,7 @@ func (s *UDPSession) kcpInput(data []byte) {
 	} else {
 		s.kcp.Input(data)
 	}
-	s.kcp.Update(ms)
+	s.kcp.Update(currentMs())
 	s.mu.Unlock()
 	s.notifyReadEvent()
 }
@@ -400,7 +392,7 @@ func (s *UDPSession) readLoop() {
 		if n, err := conn.Read(buffer); err == nil && n >= IKCP_OVERHEAD {
 			dataValid := false
 			data := buffer[:n]
-			if s.block != nil && n >= IKCP_OVERHEAD+headerSize {
+			if s.block != nil && n >= IKCP_OVERHEAD+cryptSize {
 				decrypt(s.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
@@ -452,7 +444,7 @@ func (l *Listener) monitor() {
 			data := p.data
 			from := p.from
 			dataValid := false
-			if l.block != nil && len(data) >= IKCP_OVERHEAD+headerSize {
+			if l.block != nil && len(data) >= IKCP_OVERHEAD+cryptSize {
 				decrypt(l.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
@@ -471,7 +463,7 @@ func (l *Listener) monitor() {
 					isfec := binary.LittleEndian.Uint16(data[4:])
 					if isfec == typeData {
 						conv := binary.LittleEndian.Uint32(data[fecHeaderSize+2:])
-						s := newUDPSession(conv, 3, l.mode, l, l.conn, from, l.block)
+						s := newUDPSession(conv, l.fec, l.mode, l, l.conn, from, l.block)
 						s.kcpInput(data)
 						l.sessions[addr] = s
 						l.chAccepts <- s
@@ -535,12 +527,12 @@ func (l *Listener) Addr() net.Addr {
 // Listen listens for incoming KCP packets addressed to the local address laddr on the network "udp",
 // mode must be one of: MODE_DEFAULT,MODE_NORMAL,MODE_FAST
 func Listen(mode Mode, laddr string) (*Listener, error) {
-	return ListenEncrypted(mode, laddr, nil)
+	return ListenEncrypted(mode, 0, laddr, nil)
 }
 
 // ListenEncrypted listens for incoming KCP packets addressed to the local address laddr on the network "udp" with packet encryption,
-// mode must be one of: MODE_DEFAULT,MODE_NORMAL,MODE_FAST
-func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
+// mode must be one of: MODE_DEFAULT,MODE_NORMAL,MODE_FAST; FEC = 0 means no FEC, FEC > 0 means num(FEC) as a FEC cluster
+func ListenEncrypted(mode Mode, fec int, laddr string, key []byte) (*Listener, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", laddr)
 	if err != nil {
 		return nil, err
@@ -557,6 +549,7 @@ func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
 	l.chAccepts = make(chan *UDPSession, 1024)
 	l.chDeadlinks = make(chan net.Addr, 1024)
 	l.die = make(chan struct{})
+	l.fec = fec
 	if key != nil && len(key) > 0 {
 		pass := sha256.Sum256(key)
 		if block, err := aes.NewCipher(pass[:]); err == nil {
@@ -571,11 +564,11 @@ func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
 
 // Dial connects to the remote address raddr on the network "udp", mode is same as Listen
 func Dial(mode Mode, raddr string) (*UDPSession, error) {
-	return DialEncrypted(mode, raddr, nil)
+	return DialEncrypted(mode, 0, raddr, nil)
 }
 
 // DialEncrypted connects to the remote address raddr on the network "udp" with packet encryption, mode is same as Listen
-func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
+func DialEncrypted(mode Mode, fec int, raddr string, key []byte) (*UDPSession, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", raddr)
 	if err != nil {
 		return nil, err
@@ -587,12 +580,12 @@ func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
 			if key != nil && len(key) > 0 {
 				pass := sha256.Sum256(key)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
-					return newUDPSession(rand.Uint32(), 3, mode, nil, udpconn, udpaddr, block), nil
+					return newUDPSession(rand.Uint32(), fec, mode, nil, udpconn, udpaddr, block), nil
 				} else {
 					log.Println(err)
 				}
 			}
-			return newUDPSession(rand.Uint32(), 3, mode, nil, udpconn, udpaddr, nil), nil
+			return newUDPSession(rand.Uint32(), fec, mode, nil, udpconn, udpaddr, nil), nil
 		}
 	}
 }
