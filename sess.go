@@ -13,31 +13,18 @@ import (
 	"log"
 	"math/rand"
 	"net"
-	"runtime"
 	"sync"
 	"time"
-	"unsafe"
 )
 
 var (
 	errTimeout    = errors.New("i/o timeout")
 	errBrokenPipe = errors.New("broken pipe")
 	initialVector = []byte{167, 115, 79, 156, 18, 172, 27, 1, 164, 21, 242, 193, 252, 120, 230, 107}
-	xor           XORFunc
 )
-
-func init() {
-	xor = safeXORBytes
-	if supportsUnaligned {
-		xor = fastXORWords
-	}
-}
 
 // Mode specifies the working mode of kcp
 type Mode int
-
-// XORFunc is the prototype of an xor function for cryptography
-type XORFunc func(a, b []byte)
 
 const (
 	MODE_DEFAULT Mode = iota
@@ -47,15 +34,10 @@ const (
 )
 
 const (
-	wordSize          = int(unsafe.Sizeof(uintptr(0)))
-	supportsUnaligned = runtime.GOARCH == "386" || runtime.GOARCH == "amd64"
-)
-
-const (
 	basePort       = 20000 // minimum port for listening
 	maxPort        = 65535 // maximum port for listening
 	defaultWndSize = 128   // default window size, in packet
-	headerSize     = aes.BlockSize + md5.Size
+	cryptSize      = aes.BlockSize + md5.Size
 )
 
 type (
@@ -74,11 +56,13 @@ type (
 		chReadEvent   chan bool
 		chTicker      chan time.Time
 		chUDPOutput   chan []byte
+		fec           *FEC
+		headerSize    int
 	}
 )
 
 // newUDPSession create a new udp session for client or server
-func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
+func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
 	sess := new(UDPSession)
 	sess.chTicker = make(chan time.Time, 1)
 	sess.chUDPOutput = make(chan []byte, defaultWndSize)
@@ -89,25 +73,27 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 	sess.conn = conn
 	sess.l = l
 	sess.block = block
+	if fec > 1 {
+		sess.fec = newFEC(fec, 128)
+	}
+
+	// caculate header size
+	if sess.block != nil {
+		sess.headerSize += cryptSize
+	}
+	if sess.fec != nil {
+		sess.headerSize += fecHeaderSize + 2 // 2B extra size
+	}
+
 	sess.kcp = NewKCP(conv, func(buf []byte, size int) {
 		if size >= IKCP_OVERHEAD {
-			if sess.block != nil {
-				ext := make([]byte, headerSize+size)
-				copy(ext[headerSize:], buf)
-				sess.chUDPOutput <- ext
-			} else {
-				ext := make([]byte, size)
-				copy(ext, buf)
-				sess.chUDPOutput <- ext
-			}
+			ext := make([]byte, sess.headerSize+size)
+			copy(ext[sess.headerSize:], buf)
+			sess.chUDPOutput <- ext
 		}
 	})
 	sess.kcp.WndSize(defaultWndSize, defaultWndSize)
-	if block != nil {
-		sess.kcp.SetMtu(IKCP_MTU_DEF - headerSize)
-	} else {
-		sess.kcp.SetMtu(IKCP_MTU_DEF)
-	}
+	sess.kcp.SetMtu(IKCP_MTU_DEF - sess.headerSize)
 
 	switch mode {
 	case MODE_FAST2:
@@ -254,11 +240,7 @@ func (s *UDPSession) SetWindowSize(sndwnd, rcvwnd int) {
 func (s *UDPSession) SetMtu(mtu int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.block != nil {
-		s.kcp.SetMtu(mtu - headerSize)
-	} else {
-		s.kcp.SetMtu(mtu)
-	}
+	s.kcp.SetMtu(mtu - s.headerSize)
 }
 
 // SetRetries influences the timeout of an alive KCP connection,
@@ -272,18 +254,61 @@ func (s *UDPSession) SetRetries(n int) {
 }
 
 func (s *UDPSession) outputTask() {
+	fecOffset := 0
+	if s.fec != nil && s.block != nil {
+		fecOffset = cryptSize
+	}
+
+	var fec_group [][]byte
+	var count uint32
+
 	for {
 		select {
 		case ext := <-s.chUDPOutput:
+			count++
+			var ecc []byte
+			if s.fec != nil {
+				s.fec.markData(ext[fecOffset:])
+				binary.LittleEndian.PutUint16(ext[fecOffset+fecHeaderSize:], uint16(len(ext[fecOffset+fecHeaderSize:])))
+
+				extcopy := make([]byte, len(ext))
+				copy(extcopy, ext)
+				fec_group = append(fec_group, extcopy)
+				if len(fec_group) > s.fec.cluster {
+					fec_group = fec_group[1:]
+				}
+
+				if count%uint32(s.fec.cluster) == 0 {
+					ecc = s.fec.calcECC(fec_group)
+					s.fec.markFEC(ecc[fecOffset:])
+				}
+			}
+
 			if s.block != nil {
 				io.ReadFull(crand.Reader, ext[:aes.BlockSize]) // OTP
-				checksum := md5.Sum(ext[headerSize:])
+				checksum := md5.Sum(ext[cryptSize:])
 				copy(ext[aes.BlockSize:], checksum[:])
 				encrypt(s.block, ext)
 			}
+
+			//if rand.Intn(100) < 80 {
 			n, err := s.conn.WriteTo(ext, s.remote)
 			if err != nil {
 				log.Println(err, n)
+			}
+			//}
+
+			if ecc != nil {
+				if s.block != nil {
+					io.ReadFull(crand.Reader, ecc[:aes.BlockSize]) // OTP
+					checksum := md5.Sum(ecc[cryptSize:])
+					copy(ecc[aes.BlockSize:], checksum[:])
+					encrypt(s.block, ecc)
+				}
+				n, err := s.conn.WriteTo(ecc, s.remote)
+				if err != nil {
+					log.Println(err, n)
+				}
 			}
 		case <-s.die:
 			return
@@ -339,13 +364,24 @@ func (s *UDPSession) notifyReadEvent() {
 }
 
 func (s *UDPSession) kcpInput(data []byte) {
+	f := fecDecode(data)
 	s.mu.Lock()
-	n := s.kcp.Input(data)
+	if s.fec != nil {
+		if f.isfec == typeData {
+			s.kcp.Input(f.data[2:])
+			s.fec.input(f)
+		} else if f.isfec == typeFEC {
+			if ecc := s.fec.input(f); ecc != nil {
+				sz := binary.LittleEndian.Uint16(ecc)
+				s.kcp.Input(ecc[2:sz])
+			}
+		}
+	} else {
+		s.kcp.Input(data)
+	}
 	s.kcp.Update(currentMs())
 	s.mu.Unlock()
-	if n == 0 {
-		s.notifyReadEvent()
-	}
+	s.notifyReadEvent()
 }
 
 // read loop for client session
@@ -356,7 +392,7 @@ func (s *UDPSession) readLoop() {
 		if n, err := conn.Read(buffer); err == nil && n >= IKCP_OVERHEAD {
 			dataValid := false
 			data := buffer[:n]
-			if s.block != nil && n >= IKCP_OVERHEAD+headerSize {
+			if s.block != nil && n >= IKCP_OVERHEAD+cryptSize {
 				decrypt(s.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
@@ -381,6 +417,7 @@ type (
 	// Listener defines a server listening for connections
 	Listener struct {
 		block       cipher.Block
+		fec         int
 		conn        *net.UDPConn
 		mode        Mode
 		sessions    map[string]*UDPSession
@@ -407,7 +444,7 @@ func (l *Listener) monitor() {
 			data := p.data
 			from := p.from
 			dataValid := false
-			if l.block != nil && len(data) >= IKCP_OVERHEAD+headerSize {
+			if l.block != nil && len(data) >= IKCP_OVERHEAD+cryptSize {
 				decrypt(l.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
@@ -423,11 +460,14 @@ func (l *Listener) monitor() {
 				addr := from.String()
 				s, ok := l.sessions[addr]
 				if !ok {
-					conv := binary.LittleEndian.Uint32(data)
-					s := newUDPSession(conv, l.mode, l, l.conn, from, l.block)
-					s.kcpInput(data)
-					l.sessions[addr] = s
-					l.chAccepts <- s
+					isfec := binary.LittleEndian.Uint16(data[4:])
+					if isfec == typeData {
+						conv := binary.LittleEndian.Uint32(data[fecHeaderSize+2:])
+						s := newUDPSession(conv, l.fec, l.mode, l, l.conn, from, l.block)
+						s.kcpInput(data)
+						l.sessions[addr] = s
+						l.chAccepts <- s
+					}
 				} else {
 					s.kcpInput(data)
 				}
@@ -487,12 +527,12 @@ func (l *Listener) Addr() net.Addr {
 // Listen listens for incoming KCP packets addressed to the local address laddr on the network "udp",
 // mode must be one of: MODE_DEFAULT,MODE_NORMAL,MODE_FAST
 func Listen(mode Mode, laddr string) (*Listener, error) {
-	return ListenEncrypted(mode, laddr, nil)
+	return ListenEncrypted(mode, 0, laddr, nil)
 }
 
 // ListenEncrypted listens for incoming KCP packets addressed to the local address laddr on the network "udp" with packet encryption,
-// mode must be one of: MODE_DEFAULT,MODE_NORMAL,MODE_FAST
-func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
+// mode must be one of: MODE_DEFAULT,MODE_NORMAL,MODE_FAST; FEC = 0 means no FEC, FEC > 0 means num(FEC) as a FEC cluster
+func ListenEncrypted(mode Mode, fec int, laddr string, key []byte) (*Listener, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", laddr)
 	if err != nil {
 		return nil, err
@@ -509,6 +549,7 @@ func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
 	l.chAccepts = make(chan *UDPSession, 1024)
 	l.chDeadlinks = make(chan net.Addr, 1024)
 	l.die = make(chan struct{})
+	l.fec = fec
 	if key != nil && len(key) > 0 {
 		pass := sha256.Sum256(key)
 		if block, err := aes.NewCipher(pass[:]); err == nil {
@@ -523,11 +564,11 @@ func ListenEncrypted(mode Mode, laddr string, key []byte) (*Listener, error) {
 
 // Dial connects to the remote address raddr on the network "udp", mode is same as Listen
 func Dial(mode Mode, raddr string) (*UDPSession, error) {
-	return DialEncrypted(mode, raddr, nil)
+	return DialEncrypted(mode, 0, raddr, nil)
 }
 
 // DialEncrypted connects to the remote address raddr on the network "udp" with packet encryption, mode is same as Listen
-func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
+func DialEncrypted(mode Mode, fec int, raddr string, key []byte) (*UDPSession, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", raddr)
 	if err != nil {
 		return nil, err
@@ -539,12 +580,12 @@ func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
 			if key != nil && len(key) > 0 {
 				pass := sha256.Sum256(key)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
-					return newUDPSession(rand.Uint32(), mode, nil, udpconn, udpaddr, block), nil
+					return newUDPSession(rand.Uint32(), fec, mode, nil, udpconn, udpaddr, block), nil
 				} else {
 					log.Println(err)
 				}
 			}
-			return newUDPSession(rand.Uint32(), mode, nil, udpconn, udpaddr, nil), nil
+			return newUDPSession(rand.Uint32(), fec, mode, nil, udpconn, udpaddr, nil), nil
 		}
 	}
 }
@@ -556,14 +597,11 @@ func encrypt(block cipher.Block, data []byte) {
 	n := len(data) / aes.BlockSize
 	base := 0
 	for i := 0; i < n; i++ {
-		xor(data[base:], tbl)
+		xorWords(data[base:], data[base:], tbl)
 		block.Encrypt(tbl, data[base:])
 		base += aes.BlockSize
 	}
-
-	for j := base; j < len(data); j++ {
-		data[j] = data[j] ^ tbl[j%aes.BlockSize]
-	}
+	xorBytes(data[base:], data[base:], tbl)
 }
 
 func decrypt(block cipher.Block, data []byte) {
@@ -574,30 +612,11 @@ func decrypt(block cipher.Block, data []byte) {
 	base := 0
 	for i := 0; i < n; i++ {
 		block.Encrypt(next, data[base:])
-		xor(data[base:], tbl)
+		xorWords(data[base:], data[base:], tbl)
 		tbl, next = next, tbl
 		base += aes.BlockSize
 	}
-
-	for j := base; j < len(data); j++ {
-		data[j] = data[j] ^ tbl[j%aes.BlockSize]
-	}
-}
-
-func fastXORWords(a, b []byte) {
-	aw := *(*[]uintptr)(unsafe.Pointer(&a))
-	bw := *(*[]uintptr)(unsafe.Pointer(&b))
-	n := len(b) / wordSize
-	for i := 0; i < n; i++ {
-		aw[i] = aw[i] ^ bw[i]
-	}
-}
-
-func safeXORBytes(a, b []byte) {
-	n := len(b)
-	for i := 0; i < n; i++ {
-		a[i] = a[i] ^ b[i]
-	}
+	xorBytes(data[base:], data[base:], tbl)
 }
 
 func currentMs() uint32 {
