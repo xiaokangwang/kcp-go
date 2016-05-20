@@ -100,8 +100,8 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 				fec.rx[first+1].seqid == ecc.seqid-uint32(fec.cluster)+1) {
 				// recoverable data, eg: [2,3,[4]], [1,3,[4]], [1,2,[4]]
 				recovered = make([]byte, len(ecc.data))
-				xorBytes(recovered, fec.rx[first+1].data, fec.rx[first+2].data)
-				for j := first + 3; j <= i; j++ {
+				copy(recovered, fec.rx[first+1].data)
+				for j := first + 2; j <= i; j++ {
 					xorBytes(recovered, recovered, fec.rx[j].data)
 				}
 				copy(fec.rx[first+1:], fec.rx[i+1:])
@@ -134,8 +134,8 @@ func (fec *FEC) calcECC(data [][]byte) []byte {
 	}
 
 	ecc := make([]byte, maxlen)
-	xorBytes(ecc, data[0], data[1])
-	for i := 2; i < len(data); i++ {
+	copy(ecc, data[0])
+	for i := 1; i < len(data); i++ {
 		xorBytes(ecc, ecc, data[i])
 	}
 	return ecc
