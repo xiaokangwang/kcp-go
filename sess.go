@@ -471,7 +471,7 @@ func (l *Listener) monitor() {
 					fmt.Println(isfec)
 					if isfec == typeData {
 						conv := binary.LittleEndian.Uint32(data[fecHeaderSize+2:])
-						s := newUDPSession(conv, 4, l.mode, l, l.conn, from, l.block)
+						s := newUDPSession(conv, 3, l.mode, l, l.conn, from, l.block)
 						s.kcpInput(data)
 						l.sessions[addr] = s
 						l.chAccepts <- s
@@ -587,12 +587,12 @@ func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
 			if key != nil && len(key) > 0 {
 				pass := sha256.Sum256(key)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
-					return newUDPSession(rand.Uint32(), 4, mode, nil, udpconn, udpaddr, block), nil
+					return newUDPSession(rand.Uint32(), 3, mode, nil, udpconn, udpaddr, block), nil
 				} else {
 					log.Println(err)
 				}
 			}
-			return newUDPSession(rand.Uint32(), 4, mode, nil, udpconn, udpaddr, nil), nil
+			return newUDPSession(rand.Uint32(), 3, mode, nil, udpconn, udpaddr, nil), nil
 		}
 	}
 }
