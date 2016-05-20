@@ -298,12 +298,12 @@ func (s *UDPSession) outputTask() {
 				encrypt(s.block, ext)
 			}
 
-			if rand.Intn(100) < 90 {
-				n, err := s.conn.WriteTo(ext, s.remote)
-				if err != nil {
-					log.Println(err, n)
-				}
+			//if rand.Intn(100) < 80 {
+			n, err := s.conn.WriteTo(ext, s.remote)
+			if err != nil {
+				log.Println(err, n)
 			}
+			//}
 
 			if ecc != nil {
 				if s.block != nil {
