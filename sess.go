@@ -297,11 +297,9 @@ func (s *UDPSession) outputTask() {
 				copy(ext[aes.BlockSize:], checksum[:])
 				encrypt(s.block, ext)
 			}
-			if rand.Intn(100) < 90 {
-				n, err := s.conn.WriteTo(ext, s.remote)
-				if err != nil {
-					log.Println(err, n)
-				}
+			n, err := s.conn.WriteTo(ext, s.remote)
+			if err != nil {
+				log.Println(err, n)
 			}
 
 			if ecc != nil {
