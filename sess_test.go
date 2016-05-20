@@ -48,7 +48,7 @@ func handle_client(conn *UDPSession) {
 
 func TestSendRecv(t *testing.T) {
 	var wg sync.WaitGroup
-	const par = 10
+	const par = 1
 	wg.Add(par)
 	for i := 0; i < par; i++ {
 		go client(&wg)

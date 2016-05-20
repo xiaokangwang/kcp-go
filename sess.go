@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -56,11 +57,12 @@ type (
 		chReadEvent   chan bool
 		chTicker      chan time.Time
 		chUDPOutput   chan []byte
+		fec           *FEC
 	}
 )
 
 // newUDPSession create a new udp session for client or server
-func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
+func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
 	sess := new(UDPSession)
 	sess.chTicker = make(chan time.Time, 1)
 	sess.chUDPOutput = make(chan []byte, defaultWndSize)
@@ -71,17 +73,23 @@ func newUDPSession(conv uint32, mode Mode, l *Listener, conn *net.UDPConn, remot
 	sess.conn = conn
 	sess.l = l
 	sess.block = block
+	if fec > 1 {
+		sess.fec = newFEC(fec, 128)
+	}
+
 	sess.kcp = NewKCP(conv, func(buf []byte, size int) {
 		if size >= IKCP_OVERHEAD {
+			hs := 0
 			if sess.block != nil {
-				ext := make([]byte, headerSize+size)
-				copy(ext[headerSize:], buf)
-				sess.chUDPOutput <- ext
-			} else {
-				ext := make([]byte, size)
-				copy(ext, buf)
-				sess.chUDPOutput <- ext
+				hs += headerSize
 			}
+
+			if sess.fec != nil {
+				hs += fecHeaderSize + 2 // 2B extra size
+			}
+			ext := make([]byte, hs+size)
+			copy(ext[hs:], buf)
+			sess.chUDPOutput <- ext
 		}
 	})
 	sess.kcp.WndSize(defaultWndSize, defaultWndSize)
@@ -254,9 +262,34 @@ func (s *UDPSession) SetRetries(n int) {
 }
 
 func (s *UDPSession) outputTask() {
+	fecOffset := 0
+	if s.fec != nil && s.block != nil {
+		fecOffset = headerSize
+	}
+
+	var fec_group [][]byte
+	var count uint32
+
 	for {
 		select {
 		case ext := <-s.chUDPOutput:
+			count++
+			var ecc []byte
+			if s.fec != nil {
+				fec_group = append(fec_group, ext)
+				if len(fec_group) > s.fec.group {
+					fec_group = fec_group[1:]
+				}
+
+				if count%uint32(s.fec.group) == 0 {
+					ecc = s.fec.calcECC(fec_group)
+					s.fec.markFEC(ecc[fecOffset:])
+				}
+
+				s.fec.markData(ext[fecOffset:])
+				binary.LittleEndian.PutUint16(ext[fecOffset+fecHeaderSize:], uint16(len(ext[fecOffset+fecHeaderSize:])))
+			}
+
 			if s.block != nil {
 				io.ReadFull(crand.Reader, ext[:aes.BlockSize]) // OTP
 				checksum := md5.Sum(ext[headerSize:])
@@ -266,6 +299,19 @@ func (s *UDPSession) outputTask() {
 			n, err := s.conn.WriteTo(ext, s.remote)
 			if err != nil {
 				log.Println(err, n)
+			}
+
+			if ecc != nil {
+				if s.block != nil {
+					io.ReadFull(crand.Reader, ecc[:aes.BlockSize]) // OTP
+					checksum := md5.Sum(ecc[headerSize:])
+					copy(ecc[aes.BlockSize:], checksum[:])
+					encrypt(s.block, ecc)
+				}
+				n, err := s.conn.WriteTo(ecc, s.remote)
+				if err != nil {
+					log.Println(err, n)
+				}
 			}
 		case <-s.die:
 			return
@@ -322,12 +368,24 @@ func (s *UDPSession) notifyReadEvent() {
 
 func (s *UDPSession) kcpInput(data []byte) {
 	s.mu.Lock()
-	n := s.kcp.Input(data)
+	if s.fec != nil {
+		f := fecDecode(data)
+		if f.isfec == typeData {
+			s.kcp.Input(f.data[2:])
+		} else if f.isfec == typeFEC {
+			if ecc := s.fec.input(f); ecc != nil {
+				sz := binary.LittleEndian.Uint16(ecc)
+				if len(ecc)-2 == int(sz) {
+					s.kcp.Input(ecc[2:])
+				}
+			}
+		}
+	} else {
+		s.kcp.Input(data)
+	}
 	s.kcp.Update(currentMs())
 	s.mu.Unlock()
-	if n == 0 {
-		s.notifyReadEvent()
-	}
+	s.notifyReadEvent()
 }
 
 // read loop for client session
@@ -363,6 +421,7 @@ type (
 	// Listener defines a server listening for connections
 	Listener struct {
 		block       cipher.Block
+		fec         int
 		conn        *net.UDPConn
 		mode        Mode
 		sessions    map[string]*UDPSession
@@ -405,14 +464,20 @@ func (l *Listener) monitor() {
 				addr := from.String()
 				s, ok := l.sessions[addr]
 				if !ok {
-					conv := binary.LittleEndian.Uint32(data)
-					s := newUDPSession(conv, l.mode, l, l.conn, from, l.block)
-					s.kcpInput(data)
-					l.sessions[addr] = s
-					l.chAccepts <- s
+					fecData := fecDecode(data)
+					if fecData.isfec == typeData {
+						conv := binary.LittleEndian.Uint32(fecData.data[2:])
+						fmt.Println("conv:", conv)
+						s := newUDPSession(conv, 4, l.mode, l, l.conn, from, l.block)
+						s.kcpInput(data)
+						l.sessions[addr] = s
+						l.chAccepts <- s
+					}
 				} else {
 					s.kcpInput(data)
 				}
+			} else {
+				log.Println("data invalid:")
 			}
 		case deadlink := <-l.chDeadlinks:
 			delete(l.sessions, deadlink.String())
@@ -521,12 +586,12 @@ func DialEncrypted(mode Mode, raddr string, key []byte) (*UDPSession, error) {
 			if key != nil && len(key) > 0 {
 				pass := sha256.Sum256(key)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
-					return newUDPSession(rand.Uint32(), mode, nil, udpconn, udpaddr, block), nil
+					return newUDPSession(rand.Uint32(), 4, mode, nil, udpconn, udpaddr, block), nil
 				} else {
 					log.Println(err)
 				}
 			}
-			return newUDPSession(rand.Uint32(), mode, nil, udpconn, udpaddr, nil), nil
+			return newUDPSession(rand.Uint32(), 4, mode, nil, udpconn, udpaddr, nil), nil
 		}
 	}
 }

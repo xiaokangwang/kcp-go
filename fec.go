@@ -1,9 +1,6 @@
 package kcp
 
-import (
-	"encoding/binary"
-	"fmt"
-)
+import "encoding/binary"
 
 const (
 	fecHeaderSize = 6
@@ -37,7 +34,7 @@ func newFEC(group, rxlen int) *FEC {
 }
 
 // decode a fec packet
-func (fec *FEC) decode(data []byte) fecPacket {
+func fecDecode(data []byte) fecPacket {
 	var pkt fecPacket
 	pkt.seqid = binary.LittleEndian.Uint32(data)
 	pkt.isfec = binary.LittleEndian.Uint16(data[4:])
@@ -47,19 +44,20 @@ func (fec *FEC) decode(data []byte) fecPacket {
 
 // add header data of FEC, invoker must keep data[:fecHeaderSize] free
 // no allocations will be made by fec module
-func (fec *FEC) addheader(data []byte) {
+func (fec *FEC) markData(data []byte) {
 	binary.LittleEndian.PutUint32(data, fec.seqid)
 	binary.LittleEndian.PutUint16(data[4:], typeData)
 	fec.seqid++
 }
 
-// input a fec packet
-func (fec *FEC) input(data []byte) []byte {
-	if len(data) < fecHeaderSize {
-		return nil
-	}
+func (fec *FEC) markFEC(data []byte) {
+	binary.LittleEndian.PutUint32(data, fec.seqid)
+	binary.LittleEndian.PutUint16(data[4:], typeFEC)
+	fec.seqid++
+}
 
-	pkt := fec.decode(data)
+// input a fec packet
+func (fec *FEC) input(pkt fecPacket) []byte {
 	n := len(fec.rx) - 1
 	insert_idx := 0
 	for i := n; i >= 0; i-- {
@@ -97,18 +95,16 @@ func (fec *FEC) input(data []byte) []byte {
 				copy(fec.rx[first:], fec.rx[i+1:])
 				fec.rx = fec.rx[:len(fec.rx)-fec.group-1]
 				break
-			} else if first+1 >= 0 && fec.rx[first+1].seqid == ecc.seqid-uint32(fec.group) ||
-				fec.rx[first+1].seqid == ecc.seqid-uint32(fec.group)+1 {
+			} else if first+1 >= 0 && (fec.rx[first+1].seqid == ecc.seqid-uint32(fec.group) ||
+				fec.rx[first+1].seqid == ecc.seqid-uint32(fec.group)+1) {
 				// recoverable data, eg: [2,3,[4]], [1,3,[4]], [1,2,[4]]
 				recovered = make([]byte, len(ecc.data))
-				fmt.Println("ecc.data", ecc.data)
 				xorBytes(recovered, fec.rx[first+1].data, fec.rx[first+2].data)
 				for j := first + 3; j <= i; j++ {
 					xorBytes(recovered, recovered, fec.rx[j].data)
 				}
 				copy(fec.rx[first+1:], fec.rx[i+1:])
 				fec.rx = fec.rx[:len(fec.rx)-fec.group]
-				fmt.Println("recovered:", recovered)
 			} else {
 				break
 			}
@@ -123,8 +119,7 @@ func (fec *FEC) input(data []byte) []byte {
 	return recovered
 }
 
-// genfec must be called after addheader
-func (fec *FEC) genfec(data [][]byte) []byte {
+func (fec *FEC) calcECC(data [][]byte) []byte {
 	if len(data) != fec.group {
 		return nil
 	}
@@ -136,22 +131,11 @@ func (fec *FEC) genfec(data [][]byte) []byte {
 		}
 	}
 
-	if maxlen < 0 {
-		return nil
-	}
-
 	ecc := make([]byte, maxlen)
-	fmt.Println("data[0]", data[0])
-	fmt.Println("data[1]", data[1])
 	xorBytes(ecc, data[0], data[1])
-	fmt.Println("ecc result:", ecc)
 	for i := 2; i < len(data); i++ {
 		xorBytes(ecc, ecc, data[i])
 	}
 
-	// overwrite header content
-	binary.LittleEndian.PutUint32(ecc, fec.seqid)
-	binary.LittleEndian.PutUint16(ecc[4:], typeFEC)
-	fec.seqid++
 	return ecc
 }
