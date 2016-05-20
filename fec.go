@@ -1,6 +1,9 @@
 package kcp
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"fmt"
+)
 
 const (
 	fecHeaderSize = 6
@@ -10,7 +13,6 @@ const (
 
 // FEC defines forward error correction for a KCP connection
 type FEC struct {
-	kcp   *KCP
 	rx    []fecPacket
 	rxlen int
 	group int // fec group size
@@ -23,13 +25,12 @@ type fecPacket struct {
 	data  []byte
 }
 
-func newFEC(kcp *KCP, group, rxlen int) *FEC {
+func newFEC(group, rxlen int) *FEC {
 	if group < 2 || rxlen < group {
 		return nil
 	}
 
 	fec := new(FEC)
-	fec.kcp = kcp
 	fec.group = group
 	fec.rxlen = rxlen
 	return fec
@@ -91,25 +92,23 @@ func (fec *FEC) input(data []byte) []byte {
 		if fec.rx[i].isfec == typeFEC {
 			ecc := &fec.rx[i]
 			first := i - fec.group
-			if first < -1 {
-				break
-			}
-
-			if fec.rx[first].seqid == ecc.seqid-uint32(fec.group) {
+			if first >= 0 && fec.rx[first].seqid == ecc.seqid-uint32(fec.group) {
 				// normal flow, eg: [1,2,3,[4]]
 				copy(fec.rx[first:], fec.rx[i+1:])
-				fec.rx = fec.rx[:len(fec.rx)-fec.group]
+				fec.rx = fec.rx[:len(fec.rx)-fec.group-1]
 				break
-			} else if fec.rx[first+1].seqid == ecc.seqid-uint32(fec.group) ||
+			} else if first+1 >= 0 && fec.rx[first+1].seqid == ecc.seqid-uint32(fec.group) ||
 				fec.rx[first+1].seqid == ecc.seqid-uint32(fec.group)+1 {
 				// recoverable data, eg: [2,3,[4]], [1,3,[4]], [1,2,[4]]
 				recovered = make([]byte, len(ecc.data))
-				xorBytes(recovered, fec.rx[first].data, fec.rx[first+1].data)
-				for j := first + 2; j < i; j++ {
+				fmt.Println("ecc.data", ecc.data)
+				xorBytes(recovered, fec.rx[first+1].data, fec.rx[first+2].data)
+				for j := first + 3; j <= i; j++ {
 					xorBytes(recovered, recovered, fec.rx[j].data)
 				}
-				copy(fec.rx[first:], fec.rx[i+1:])
-				fec.rx = fec.rx[:len(fec.rx)-fec.group+1]
+				copy(fec.rx[first+1:], fec.rx[i+1:])
+				fec.rx = fec.rx[:len(fec.rx)-fec.group]
+				fmt.Println("recovered:", recovered)
 			} else {
 				break
 			}
@@ -125,7 +124,7 @@ func (fec *FEC) input(data []byte) []byte {
 }
 
 // genfec must be called after addheader
-func (fec *FEC) genfec(seqid uint32, data ...[]byte) []byte {
+func (fec *FEC) genfec(data [][]byte) []byte {
 	if len(data) != fec.group {
 		return nil
 	}
@@ -141,14 +140,18 @@ func (fec *FEC) genfec(seqid uint32, data ...[]byte) []byte {
 		return nil
 	}
 
-	ecc := make([]byte, maxlen+2)
+	ecc := make([]byte, maxlen)
+	fmt.Println("data[0]", data[0])
+	fmt.Println("data[1]", data[1])
 	xorBytes(ecc, data[0], data[1])
+	fmt.Println("ecc result:", ecc)
 	for i := 2; i < len(data); i++ {
 		xorBytes(ecc, ecc, data[i])
 	}
 
 	// overwrite header content
-	binary.LittleEndian.PutUint32(ecc, seqid)
+	binary.LittleEndian.PutUint32(ecc, fec.seqid)
 	binary.LittleEndian.PutUint16(ecc[4:], typeFEC)
+	fec.seqid++
 	return ecc
 }
