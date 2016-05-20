@@ -73,7 +73,7 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 	sess.conn = conn
 	sess.l = l
 	sess.block = block
-	if fec > 1 {
+	if fec > 0 {
 		sess.fec = newFEC(fec, 128)
 	}
 
@@ -82,7 +82,7 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 		sess.headerSize += cryptSize
 	}
 	if sess.fec != nil {
-		sess.headerSize += fecHeaderSize + 2 // 2B extra size
+		sess.headerSize += fecHeaderSizePlus2
 	}
 
 	sess.kcp = NewKCP(conv, func(buf []byte, size int) {
@@ -389,10 +389,10 @@ func (s *UDPSession) readLoop() {
 	conn := s.conn
 	buffer := make([]byte, 4096)
 	for {
-		if n, err := conn.Read(buffer); err == nil && n >= IKCP_OVERHEAD {
+		if n, err := conn.Read(buffer); err == nil && n >= s.headerSize+IKCP_OVERHEAD {
 			dataValid := false
 			data := buffer[:n]
-			if s.block != nil && n >= IKCP_OVERHEAD+cryptSize {
+			if s.block != nil {
 				decrypt(s.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
@@ -423,6 +423,7 @@ type (
 		sessions    map[string]*UDPSession
 		chAccepts   chan *UDPSession
 		chDeadlinks chan net.Addr
+		headerSize  int
 		die         chan struct{}
 	}
 
@@ -444,7 +445,7 @@ func (l *Listener) monitor() {
 			data := p.data
 			from := p.from
 			dataValid := false
-			if l.block != nil && len(data) >= IKCP_OVERHEAD+cryptSize {
+			if l.block != nil {
 				decrypt(l.block, data)
 				data = data[aes.BlockSize:]
 				checksum := md5.Sum(data[md5.Size:])
@@ -459,10 +460,21 @@ func (l *Listener) monitor() {
 			if dataValid {
 				addr := from.String()
 				s, ok := l.sessions[addr]
-				if !ok {
-					isfec := binary.LittleEndian.Uint16(data[4:])
-					if isfec == typeData {
-						conv := binary.LittleEndian.Uint32(data[fecHeaderSize+2:])
+				if !ok { // new session
+					var conv uint32
+					convValid := false
+					if l.fec > 0 { // has fec header
+						isfec := binary.LittleEndian.Uint16(data[4:])
+						if isfec == typeData {
+							conv = binary.LittleEndian.Uint32(data[fecHeaderSizePlus2:])
+							convValid = true
+						}
+					} else { // direct read
+						conv = binary.LittleEndian.Uint32(data)
+						convValid = true
+					}
+
+					if convValid {
 						s := newUDPSession(conv, l.fec, l.mode, l, l.conn, from, l.block)
 						s.kcpInput(data)
 						l.sessions[addr] = s
@@ -491,7 +503,7 @@ func (l *Listener) monitor() {
 func (l *Listener) receiver(ch chan packet) {
 	for {
 		data := make([]byte, 4096)
-		if n, from, err := l.conn.ReadFromUDP(data); err == nil && n >= IKCP_OVERHEAD {
+		if n, from, err := l.conn.ReadFromUDP(data); err == nil && n >= l.headerSize+IKCP_OVERHEAD {
 			ch <- packet{from, data[:n]}
 		} else {
 			return
@@ -558,6 +570,15 @@ func ListenEncrypted(mode Mode, fec int, laddr string, key []byte) (*Listener, e
 			log.Println(err)
 		}
 	}
+
+	// caculate header size
+	if l.block != nil {
+		l.headerSize += cryptSize
+	}
+	if l.fec > 0 {
+		l.headerSize += fecHeaderSizePlus2
+	}
+
 	go l.monitor()
 	return l, nil
 }

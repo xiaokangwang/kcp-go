@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	fecHeaderSize = 6
-	typeData      = 0
-	typeFEC       = 1<<16 - 1
+	fecHeaderSize      = 6
+	fecHeaderSizePlus2 = fecHeaderSize + 2 // plus 2B data size
+	typeData           = 0
+	typeFEC            = 1<<16 - 1
 )
 
 // FEC defines forward error correction for packets
@@ -27,7 +28,7 @@ type fecPacket struct {
 }
 
 func newFEC(cluster, rxlimit int) *FEC {
-	if cluster < 2 || rxlimit < cluster {
+	if cluster < 1 || rxlimit < cluster {
 		return nil
 	}
 
@@ -49,8 +50,6 @@ func fecDecode(data []byte) fecPacket {
 	return pkt
 }
 
-// add header data of FEC, invoker must keep data[:fecHeaderSize] free
-// no allocations will be made by fec module
 func (fec *FEC) markData(data []byte) {
 	binary.LittleEndian.PutUint32(data, fec.next)
 	binary.LittleEndian.PutUint16(data[4:], typeData)
