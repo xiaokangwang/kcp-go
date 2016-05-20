@@ -9,7 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -74,7 +73,7 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 	sess.l = l
 	sess.block = block
 	if fec > 1 {
-		sess.fec = newFEC(fec, 1024)
+		sess.fec = newFEC(fec, 128)
 	}
 
 	sess.kcp = NewKCP(conv, func(buf []byte, size int) {
@@ -282,11 +281,11 @@ func (s *UDPSession) outputTask() {
 				extcopy := make([]byte, len(ext))
 				copy(extcopy, ext)
 				fec_group = append(fec_group, extcopy)
-				if len(fec_group) > s.fec.group {
+				if len(fec_group) > s.fec.cluster {
 					fec_group = fec_group[1:]
 				}
 
-				if count%uint32(s.fec.group) == 0 {
+				if count%uint32(s.fec.cluster) == 0 {
 					ecc = s.fec.calcECC(fec_group)
 					s.fec.markFEC(ecc[fecOffset:])
 				}
@@ -298,9 +297,11 @@ func (s *UDPSession) outputTask() {
 				copy(ext[aes.BlockSize:], checksum[:])
 				encrypt(s.block, ext)
 			}
-			n, err := s.conn.WriteTo(ext, s.remote)
-			if err != nil {
-				log.Println(err, n)
+			if rand.Intn(100) < 90 {
+				n, err := s.conn.WriteTo(ext, s.remote)
+				if err != nil {
+					log.Println(err, n)
+				}
 			}
 
 			if ecc != nil {
@@ -369,25 +370,32 @@ func (s *UDPSession) notifyReadEvent() {
 }
 
 func (s *UDPSession) kcpInput(data []byte) {
+	f := fecDecode(data)
+	ms := currentMs()
 	s.mu.Lock()
 	if s.fec != nil {
-		f := fecDecode(data)
 		if f.isfec == typeData {
 			s.kcp.Input(f.data[2:])
-			s.fec.input(f)
-		} else if f.isfec == typeFEC {
-			if ecc := s.fec.input(f); ecc != nil {
-				sz := binary.LittleEndian.Uint16(ecc)
-				if len(ecc) >= int(sz) {
-					s.kcp.Input(ecc[2:sz])
-				}
-			}
 		}
 	} else {
 		s.kcp.Input(data)
 	}
-	s.kcp.Update(currentMs())
+	s.kcp.Update(ms)
 	s.mu.Unlock()
+
+	if s.fec != nil {
+		if f.isfec == typeData {
+			s.fec.input(f)
+		} else if f.isfec == typeFEC {
+			if ecc := s.fec.input(f); ecc != nil {
+				sz := binary.LittleEndian.Uint16(ecc)
+				s.mu.Lock()
+				s.kcp.Input(ecc[2:sz])
+				s.kcp.Update(ms)
+				s.mu.Unlock()
+			}
+		}
+	}
 	s.notifyReadEvent()
 }
 
@@ -468,7 +476,6 @@ func (l *Listener) monitor() {
 				s, ok := l.sessions[addr]
 				if !ok {
 					isfec := binary.LittleEndian.Uint16(data[4:])
-					fmt.Println(isfec)
 					if isfec == typeData {
 						conv := binary.LittleEndian.Uint32(data[fecHeaderSize+2:])
 						s := newUDPSession(conv, 3, l.mode, l, l.conn, from, l.block)

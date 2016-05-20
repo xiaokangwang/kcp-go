@@ -5,15 +5,15 @@ import "encoding/binary"
 const (
 	fecHeaderSize = 6
 	typeData      = 0
-	typeFEC       = 1
+	typeFEC       = 1<<16 - 1
 )
 
-// FEC defines forward error correction for a KCP connection
+// FEC defines forward error correction for packets
 type FEC struct {
-	rx    []fecPacket
-	rxlen int
-	group int // fec group size
-	seqid uint32
+	rx      []fecPacket // orderedr rx queue
+	rxlimit int
+	cluster int // fec cluster size
+	seqid   uint32
 }
 
 type fecPacket struct {
@@ -22,14 +22,14 @@ type fecPacket struct {
 	data  []byte
 }
 
-func newFEC(group, rxlen int) *FEC {
-	if group < 2 || rxlen < group {
+func newFEC(cluster, rxlimit int) *FEC {
+	if cluster < 2 || rxlimit < cluster {
 		return nil
 	}
 
 	fec := new(FEC)
-	fec.group = group
-	fec.rxlen = rxlen
+	fec.cluster = cluster
+	fec.rxlimit = rxlimit
 	return fec
 }
 
@@ -90,24 +90,22 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 	for i := insert_idx; i < len(fec.rx); i++ {
 		if fec.rx[i].isfec == typeFEC {
 			ecc := &fec.rx[i]
-			first := i - fec.group
-			if first >= 0 && fec.rx[first].seqid == ecc.seqid-uint32(fec.group) {
+			first := i - fec.cluster
+			if first >= 0 && fec.rx[first].seqid == ecc.seqid-uint32(fec.cluster) {
 				// normal flow, eg: [1,2,3,[4]]
 				copy(fec.rx[first:], fec.rx[i+1:])
-				fec.rx = fec.rx[:len(fec.rx)-fec.group-1]
+				fec.rx = fec.rx[:len(fec.rx)-fec.cluster-1]
 				break
-			} else if first+1 >= 0 && (fec.rx[first+1].seqid == ecc.seqid-uint32(fec.group) ||
-				fec.rx[first+1].seqid == ecc.seqid-uint32(fec.group)+1) {
+			} else if first+1 >= 0 && (fec.rx[first+1].seqid == ecc.seqid-uint32(fec.cluster) ||
+				fec.rx[first+1].seqid == ecc.seqid-uint32(fec.cluster)+1) {
 				// recoverable data, eg: [2,3,[4]], [1,3,[4]], [1,2,[4]]
 				recovered = make([]byte, len(ecc.data))
-				copy(recovered, fec.rx[first+1].data)
-				for j := first + 2; j <= i; j++ {
-					buf := make([]byte, len(ecc.data))
-					copy(buf, fec.rx[j].data)
-					xorBytes(recovered, recovered, buf)
+				xorBytes(recovered, fec.rx[first+1].data, fec.rx[first+2].data)
+				for j := first + 3; j <= i; j++ {
+					xorBytes(recovered, recovered, fec.rx[j].data)
 				}
 				copy(fec.rx[first+1:], fec.rx[i+1:])
-				fec.rx = fec.rx[:len(fec.rx)-fec.group]
+				fec.rx = fec.rx[:len(fec.rx)-fec.cluster]
 				break
 			} else {
 				break
@@ -116,7 +114,7 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 	}
 
 	// keep rxlen
-	if len(fec.rx) > fec.rxlen {
+	if len(fec.rx) > fec.rxlimit {
 		fec.rx = fec.rx[1:]
 	}
 
@@ -124,24 +122,21 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 }
 
 func (fec *FEC) calcECC(data [][]byte) []byte {
-	if len(data) != fec.group {
+	if len(data) != fec.cluster {
 		return nil
 	}
 
-	maxlen := 0
-	for k := range data {
-		if maxlen < len(data[k]) {
-			maxlen = len(data[k])
+	maxlen := len(data[0])
+	for i := 1; i < len(data); i++ {
+		if maxlen < len(data[i]) {
+			maxlen = len(data[i])
 		}
 	}
 
 	ecc := make([]byte, maxlen)
-	copy(ecc, data[0])
-	for i := 1; i < len(data); i++ {
-		buf := make([]byte, maxlen)
-		copy(buf, data[i])
-		xorBytes(ecc, ecc, buf)
+	xorBytes(ecc, data[0], data[1])
+	for i := 2; i < len(data); i++ {
+		xorBytes(ecc, ecc, data[i])
 	}
-
 	return ecc
 }
