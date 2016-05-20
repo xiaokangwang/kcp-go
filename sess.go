@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -275,7 +276,12 @@ func (s *UDPSession) outputTask() {
 			count++
 			var ecc []byte
 			if s.fec != nil {
-				fec_group = append(fec_group, ext)
+				s.fec.markData(ext[fecOffset:])
+				binary.LittleEndian.PutUint16(ext[fecOffset+fecHeaderSize:], uint16(len(ext[fecOffset+fecHeaderSize:])))
+
+				extcopy := make([]byte, len(ext))
+				copy(extcopy, ext)
+				fec_group = append(fec_group, extcopy)
 				if len(fec_group) > s.fec.group {
 					fec_group = fec_group[1:]
 				}
@@ -284,9 +290,6 @@ func (s *UDPSession) outputTask() {
 					ecc = s.fec.calcECC(fec_group)
 					s.fec.markFEC(ecc[fecOffset:])
 				}
-
-				s.fec.markData(ext[fecOffset:])
-				binary.LittleEndian.PutUint16(ext[fecOffset+fecHeaderSize:], uint16(len(ext[fecOffset+fecHeaderSize:])))
 			}
 
 			if s.block != nil {
@@ -371,13 +374,12 @@ func (s *UDPSession) kcpInput(data []byte) {
 		f := fecDecode(data)
 		if f.isfec == typeData {
 			s.kcp.Input(f.data[2:])
+			s.fec.input(f)
 		} else if f.isfec == typeFEC {
 			if ecc := s.fec.input(f); ecc != nil {
 				sz := binary.LittleEndian.Uint16(ecc)
-				log.Println("fec recovered#1")
-				if len(ecc)-2 == int(sz) {
-					log.Println("fec recovered#2")
-					s.kcp.Input(ecc[2:])
+				if len(ecc) >= int(sz) {
+					s.kcp.Input(ecc[2:sz])
 				}
 			}
 		}
@@ -465,9 +467,10 @@ func (l *Listener) monitor() {
 				addr := from.String()
 				s, ok := l.sessions[addr]
 				if !ok {
-					fecData := fecDecode(data)
-					if fecData.isfec == typeData {
-						conv := binary.LittleEndian.Uint32(fecData.data[2:])
+					isfec := binary.LittleEndian.Uint16(data[4:])
+					fmt.Println(isfec)
+					if isfec == typeData {
+						conv := binary.LittleEndian.Uint32(data[fecHeaderSize+2:])
 						s := newUDPSession(conv, 4, l.mode, l, l.conn, from, l.block)
 						s.kcpInput(data)
 						l.sessions[addr] = s
@@ -476,8 +479,6 @@ func (l *Listener) monitor() {
 				} else {
 					s.kcpInput(data)
 				}
-			} else {
-				log.Println("data invalid:")
 			}
 		case deadlink := <-l.chDeadlinks:
 			delete(l.sessions, deadlink.String())

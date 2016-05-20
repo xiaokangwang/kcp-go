@@ -38,7 +38,8 @@ func fecDecode(data []byte) fecPacket {
 	var pkt fecPacket
 	pkt.seqid = binary.LittleEndian.Uint32(data)
 	pkt.isfec = binary.LittleEndian.Uint16(data[4:])
-	pkt.data = data[fecHeaderSize:]
+	pkt.data = make([]byte, len(data[fecHeaderSize:]))
+	copy(pkt.data, data[fecHeaderSize:])
 	return pkt
 }
 
@@ -99,12 +100,15 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 				fec.rx[first+1].seqid == ecc.seqid-uint32(fec.group)+1) {
 				// recoverable data, eg: [2,3,[4]], [1,3,[4]], [1,2,[4]]
 				recovered = make([]byte, len(ecc.data))
-				xorBytes(recovered, fec.rx[first+1].data, fec.rx[first+2].data)
-				for j := first + 3; j <= i; j++ {
-					xorBytes(recovered, recovered, fec.rx[j].data)
+				copy(recovered, fec.rx[first+1].data)
+				for j := first + 2; j <= i; j++ {
+					buf := make([]byte, len(ecc.data))
+					copy(buf, fec.rx[j].data)
+					xorBytes(recovered, recovered, buf)
 				}
 				copy(fec.rx[first+1:], fec.rx[i+1:])
 				fec.rx = fec.rx[:len(fec.rx)-fec.group]
+				break
 			} else {
 				break
 			}
@@ -132,9 +136,11 @@ func (fec *FEC) calcECC(data [][]byte) []byte {
 	}
 
 	ecc := make([]byte, maxlen)
-	xorBytes(ecc, data[0], data[1])
-	for i := 2; i < len(data); i++ {
-		xorBytes(ecc, ecc, data[i])
+	copy(ecc, data[0])
+	for i := 1; i < len(data); i++ {
+		buf := make([]byte, maxlen)
+		copy(buf, data[i])
+		xorBytes(ecc, ecc, buf)
 	}
 
 	return ecc
