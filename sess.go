@@ -9,7 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -74,7 +73,7 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 	sess.l = l
 	sess.block = block
 	if fec > 1 {
-		sess.fec = newFEC(fec, 4096)
+		sess.fec = newFEC(fec, 1024)
 	}
 
 	sess.kcp = NewKCP(conv, func(buf []byte, size int) {
@@ -375,7 +374,9 @@ func (s *UDPSession) kcpInput(data []byte) {
 		} else if f.isfec == typeFEC {
 			if ecc := s.fec.input(f); ecc != nil {
 				sz := binary.LittleEndian.Uint16(ecc)
+				log.Println("fec recovered#1")
 				if len(ecc)-2 == int(sz) {
+					log.Println("fec recovered#2")
 					s.kcp.Input(ecc[2:])
 				}
 			}
@@ -467,7 +468,6 @@ func (l *Listener) monitor() {
 					fecData := fecDecode(data)
 					if fecData.isfec == typeData {
 						conv := binary.LittleEndian.Uint32(fecData.data[2:])
-						fmt.Println("conv:", conv)
 						s := newUDPSession(conv, 4, l.mode, l, l.conn, from, l.block)
 						s.kcpInput(data)
 						l.sessions[addr] = s

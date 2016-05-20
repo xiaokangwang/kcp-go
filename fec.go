@@ -1,9 +1,6 @@
 package kcp
 
-import (
-	"encoding/binary"
-	"fmt"
-)
+import "encoding/binary"
 
 const (
 	fecHeaderSize = 6
@@ -108,7 +105,6 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 				}
 				copy(fec.rx[first+1:], fec.rx[i+1:])
 				fec.rx = fec.rx[:len(fec.rx)-fec.group]
-				fmt.Println(recovered)
 			} else {
 				break
 			}
