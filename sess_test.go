@@ -134,10 +134,10 @@ func client3(wg *sync.WaitGroup) {
 		panic(err)
 	}
 	cli.SetRetries(100)
-	msg := make([]byte, 16384)
+	msg := make([]byte, 4096)
 	buf := make([]byte, 1024*1024)
 	cli.SetWindowSize(1024, 1024)
-	for i := 0; i < 1024; i++ {
+	for i := 0; i < 4096; i++ {
 		cli.Write(msg)
 	}
 	nrecv := 0
