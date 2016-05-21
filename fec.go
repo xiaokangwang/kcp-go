@@ -89,7 +89,7 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 	}
 
 	var recovered []byte
-	for i := insert_idx; i < len(fec.rx); i++ {
+	for i := insert_idx; i <= insert_idx+fec.cluster && i < len(fec.rx); i++ {
 		if fec.rx[i].isfec == typeFEC {
 			ecc := &fec.rx[i]
 			first := i - fec.cluster
