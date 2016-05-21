@@ -103,8 +103,7 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 			} else if first+1 >= 0 && (fec.rx[first+1].seqid == ecc.seqid-uint32(fec.cluster) ||
 				fec.rx[first+1].seqid == ecc.seqid-uint32(fec.cluster)+1) {
 				// recoverable data, eg: [2,3,[4]], [1,3,[4]], [1,2,[4]]
-				recovered = make([]byte, len(ecc.data))
-				copy(recovered, ecc.data)
+				recovered = ecc.data
 				for j := first + 1; j < i; j++ {
 					buf := make([]byte, len(recovered))
 					copy(buf, fec.rx[j].data)
