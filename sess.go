@@ -433,7 +433,7 @@ type (
 
 // monitor incoming data for all connections of server
 func (l *Listener) monitor() {
-	chPacket := make(chan packet, 4096)
+	chPacket := make(chan packet, 1024)
 	go l.receiver(chPacket)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
