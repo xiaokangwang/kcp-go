@@ -38,6 +38,7 @@ const (
 	basePort        = 20000 // minimum port for listening
 	maxPort         = 65535 // maximum port for listening
 	defaultWndSize  = 128   // default window size, in packet
+	maxWaitSnd      = 65535 // max waitsnd queue size in kcp
 	cryptHeaderSize = aes.BlockSize + md5.Size
 )
 
@@ -52,11 +53,13 @@ type (
 		l             *Listener // point to server listener if it's a server socket
 		local, remote net.Addr
 		rd            time.Time // read deadline
+		wd            time.Time // write deadline
 		sockbuff      []byte    // kcp receiving is based on packet, I turn it into stream
 		die           chan struct{}
 		isClosed      bool
 		mu            sync.Mutex
 		chReadEvent   chan bool
+		chUpdateEvent chan bool
 		chTicker      chan time.Time
 		chUDPOutput   chan []byte
 		headerSize    int
@@ -71,6 +74,7 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 	sess.die = make(chan struct{})
 	sess.local = conn.LocalAddr()
 	sess.chReadEvent = make(chan bool, 1)
+	sess.chUpdateEvent = make(chan bool, 1)
 	sess.remote = remote
 	sess.conn = conn
 	sess.l = l
@@ -163,28 +167,47 @@ func (s *UDPSession) Read(b []byte) (n int, err error) {
 
 // Write implements the Conn Write method.
 func (s *UDPSession) Write(b []byte) (n int, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.isClosed {
-		return 0, errBrokenPipe
-	}
-
-	n = len(b)
-	max := int(s.kcp.mss * 255)
-	if s.kcp.snd_wnd < 255 {
-		max = int(s.kcp.mss * s.kcp.snd_wnd)
-	}
 	for {
-		if len(b) <= max { // in most cases
-			s.kcp.Send(b)
-			break
-		} else {
-			s.kcp.Send(b[:max])
-			b = b[max:]
+		s.mu.Lock()
+		if s.isClosed {
+			s.mu.Unlock()
+			return 0, errBrokenPipe
+		}
+
+		if !s.wd.IsZero() {
+			if time.Now().After(s.wd) { // timeout
+				s.mu.Unlock()
+				return 0, errTimeout
+			}
+		}
+
+		if s.kcp.WaitSnd() < maxWaitSnd {
+			n = len(b)
+			max := int(s.kcp.mss * 255) // frag is 8bit
+			if s.kcp.snd_wnd < 255 {
+				max = int(s.kcp.mss * s.kcp.snd_wnd)
+			}
+			for {
+				if len(b) <= max { // in most cases
+					s.kcp.Send(b)
+					break
+				} else {
+					s.kcp.Send(b[:max])
+					b = b[max:]
+				}
+			}
+			s.needUpdate = true
+			s.mu.Unlock()
+			return n, nil
+		}
+		s.mu.Unlock()
+
+		// wait for update event or timeout
+		select {
+		case <-s.chUpdateEvent:
+		case <-time.After(1 * time.Second):
 		}
 	}
-	s.needUpdate = true
-	return
 }
 
 // Close closes the connection.
@@ -215,6 +238,7 @@ func (s *UDPSession) SetDeadline(t time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rd = t
+	s.wd = t
 	return nil
 }
 
@@ -228,6 +252,9 @@ func (s *UDPSession) SetReadDeadline(t time.Time) error {
 
 // SetWriteDeadline implements the Conn SetWriteDeadline method.
 func (s *UDPSession) SetWriteDeadline(t time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.wd = t
 	return nil
 }
 
@@ -341,6 +368,7 @@ func (s *UDPSession) updateTask() {
 			s.needUpdate = false
 			state := s.kcp.state
 			s.mu.Unlock()
+			s.notifyUpdateEvent()
 			if state != 0 { // deadlink
 				s.Close()
 			}
@@ -361,6 +389,13 @@ func (s *UDPSession) GetConv() uint32 {
 func (s *UDPSession) notifyReadEvent() {
 	select {
 	case s.chReadEvent <- true:
+	default:
+	}
+}
+
+func (s *UDPSession) notifyUpdateEvent() {
+	select {
+	case s.chUpdateEvent <- true:
 	default:
 	}
 }
