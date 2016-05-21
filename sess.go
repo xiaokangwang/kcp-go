@@ -368,7 +368,7 @@ func (s *UDPSession) kcpInput(data []byte) {
 	s.mu.Lock()
 	if s.fec != nil {
 		f := fecDecode(data)
-		if f.isfec == typeData {
+		if f.flag == typeData {
 			s.kcp.Input(f.data[2:])
 		}
 		if ecc := s.fec.input(f); ecc != nil {

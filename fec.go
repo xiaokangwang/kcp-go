@@ -21,7 +21,7 @@ type (
 
 	fecPacket struct {
 		seqid uint32
-		isfec uint16
+		flag  uint16
 		data  []byte
 	}
 )
@@ -44,7 +44,7 @@ func fecDecode(data []byte) fecPacket {
 	copy(buf, data)
 
 	pkt.seqid = binary.LittleEndian.Uint32(buf)
-	pkt.isfec = binary.LittleEndian.Uint16(buf[4:])
+	pkt.flag = binary.LittleEndian.Uint16(buf[4:])
 	pkt.data = buf[6:]
 	return pkt
 }
@@ -92,7 +92,7 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 
 	var recovered []byte
 	for i := insert_idx; i <= insert_idx+fec.cluster && i < len(fec.rx); i++ {
-		if fec.rx[i].isfec == typeFEC {
+		if fec.rx[i].flag == typeFEC {
 			ecc := &fec.rx[i]
 			first := i - fec.cluster
 			if first >= 0 && fec.rx[first].seqid == ecc.seqid-uint32(fec.cluster) {
