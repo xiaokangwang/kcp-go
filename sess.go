@@ -45,6 +45,7 @@ type (
 	// UDPSession defines a KCP session implemented by UDP
 	UDPSession struct {
 		kcp           *KCP         // the core ARQ
+		fec           *FEC         // forward error correction
 		conn          *net.UDPConn // the underlying UDP socket
 		block         cipher.Block
 		l             *Listener // point to server listener if it's a server socket
@@ -57,7 +58,6 @@ type (
 		chReadEvent   chan bool
 		chTicker      chan time.Time
 		chUDPOutput   chan []byte
-		fec           *FEC
 		headerSize    int
 	}
 )
@@ -256,7 +256,7 @@ func (s *UDPSession) SetRetries(n int) {
 
 func (s *UDPSession) outputTask() {
 	fecOffset := 0
-	if s.fec != nil && s.block != nil {
+	if s.block != nil {
 		fecOffset = cryptHeaderSize
 	}
 
@@ -270,8 +270,10 @@ func (s *UDPSession) outputTask() {
 			var ecc []byte
 			if s.fec != nil {
 				s.fec.markData(ext[fecOffset:])
+				// add 2B size
 				binary.LittleEndian.PutUint16(ext[fecOffset+fecHeaderSize:], uint16(len(ext[fecOffset+fecHeaderSize:])))
 
+				// copy data to fec group
 				extcopy := make([]byte, len(ext))
 				copy(extcopy, ext)
 				fec_group = append(fec_group, extcopy)
@@ -279,6 +281,7 @@ func (s *UDPSession) outputTask() {
 					fec_group = fec_group[1:]
 				}
 
+				// cacluation of ecc
 				if count%uint32(s.fec.cluster) == 0 {
 					ecc = s.fec.calcECC(fec_group)
 					s.fec.markFEC(ecc[fecOffset:])
@@ -290,6 +293,13 @@ func (s *UDPSession) outputTask() {
 				checksum := md5.Sum(ext[cryptHeaderSize:])
 				copy(ext[aes.BlockSize:], checksum[:])
 				encrypt(s.block, ext)
+
+				if ecc != nil {
+					io.ReadFull(crand.Reader, ecc[:aes.BlockSize])
+					checksum := md5.Sum(ecc[cryptHeaderSize:])
+					copy(ecc[aes.BlockSize:], checksum[:])
+					encrypt(s.block, ecc)
+				}
 			}
 
 			//if rand.Intn(100) < 80 {
@@ -300,12 +310,6 @@ func (s *UDPSession) outputTask() {
 			//}
 
 			if ecc != nil {
-				if s.block != nil {
-					io.ReadFull(crand.Reader, ecc[:aes.BlockSize]) // OTP
-					checksum := md5.Sum(ecc[cryptHeaderSize:])
-					copy(ecc[aes.BlockSize:], checksum[:])
-					encrypt(s.block, ecc)
-				}
 				n, err := s.conn.WriteTo(ecc, s.remote)
 				if err != nil {
 					log.Println(err, n)
