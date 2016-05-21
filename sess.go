@@ -373,7 +373,7 @@ func (s *UDPSession) kcpInput(data []byte) {
 	if s.fec != nil {
 		f := fecDecode(data)
 		if f.flag == typeData {
-			s.kcp.Input(f.data[2:])
+			s.kcp.Input(f.data[2:]) // skip 2B size
 		}
 		if ecc := s.fec.input(f); ecc != nil {
 			sz := binary.LittleEndian.Uint16(ecc)
