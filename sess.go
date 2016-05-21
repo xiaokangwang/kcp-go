@@ -6,7 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/md5"
 	crand "crypto/rand"
-	"crypto/sha256"
+	"crypto/sha1"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -21,6 +21,7 @@ var (
 	errTimeout    = errors.New("i/o timeout")
 	errBrokenPipe = errors.New("broken pipe")
 	initialVector = []byte{167, 115, 79, 156, 18, 172, 27, 1, 164, 21, 242, 193, 252, 120, 230, 107}
+	salt          = "kcp-go"
 )
 
 // Mode specifies the working mode of kcp
@@ -563,7 +564,7 @@ func ListenEncrypted(mode Mode, fec int, laddr string, key []byte) (*Listener, e
 	l.die = make(chan struct{})
 	l.fec = fec
 	if key != nil && len(key) > 0 {
-		pass := sha256.Sum256(key)
+		pass := pbkdf2(key, []byte(salt), 4096, 32, sha1.New)
 		if block, err := aes.NewCipher(pass[:]); err == nil {
 			l.block = block
 		} else {
@@ -599,7 +600,7 @@ func DialEncrypted(mode Mode, fec int, raddr string, key []byte) (*UDPSession, e
 		port := basePort + rand.Int()%(maxPort-basePort)
 		if udpconn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port}); err == nil {
 			if key != nil && len(key) > 0 {
-				pass := sha256.Sum256(key)
+				pass := pbkdf2(key, []byte(salt), 4096, 32, sha1.New)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
 					return newUDPSession(rand.Uint32(), fec, mode, nil, udpconn, udpaddr, block), nil
 				} else {
