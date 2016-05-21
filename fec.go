@@ -106,7 +106,9 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 				recovered = make([]byte, len(ecc.data))
 				copy(recovered, ecc.data)
 				for j := first + 1; j < i; j++ {
-					xorBytes(recovered, recovered, fec.rx[j].data)
+					buf := make([]byte, len(recovered))
+					copy(buf, fec.rx[j].data)
+					xorBytes(recovered, recovered, buf)
 				}
 				copy(fec.rx[first+1:], fec.rx[i+1:])
 				fec.rx = fec.rx[:len(fec.rx)-fec.cluster]
@@ -147,7 +149,9 @@ func (fec *FEC) calcECC(data [][]byte) []byte {
 	ecc := make([]byte, maxlen)
 	copy(ecc, data[0])
 	for i := 1; i < len(data); i++ {
-		xorBytes(ecc, ecc, data[i])
+		buf := make([]byte, maxlen)
+		copy(buf, data[i])
+		xorBytes(ecc, ecc, buf)
 	}
 	return ecc
 }
