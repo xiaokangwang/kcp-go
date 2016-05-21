@@ -48,6 +48,7 @@ type (
 		fec           *FEC         // forward error correction
 		conn          *net.UDPConn // the underlying UDP socket
 		block         cipher.Block
+		needUpdate    bool
 		l             *Listener // point to server listener if it's a server socket
 		local, remote net.Addr
 		rd            time.Time // read deadline
@@ -182,7 +183,7 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 			b = b[max:]
 		}
 	}
-	s.kcp.Update(currentMs())
+	s.needUpdate = true
 	return
 }
 
@@ -333,10 +334,11 @@ func (s *UDPSession) updateTask() {
 		case now := <-tc:
 			current := uint32(now.UnixNano() / int64(time.Millisecond))
 			s.mu.Lock()
-			if current >= nextupdate {
+			if current >= nextupdate || s.needUpdate {
 				s.kcp.Update(current)
 				nextupdate = s.kcp.Check(current)
 			}
+			s.needUpdate = false
 			state := s.kcp.state
 			s.mu.Unlock()
 			if state != 0 { // deadlink
@@ -377,7 +379,7 @@ func (s *UDPSession) kcpInput(data []byte) {
 	} else {
 		s.kcp.Input(data)
 	}
-	s.kcp.Update(currentMs())
+	s.needUpdate = true
 	s.mu.Unlock()
 	s.notifyReadEvent()
 }
@@ -636,8 +638,4 @@ func decrypt(block cipher.Block, data []byte) {
 		base += aes.BlockSize
 	}
 	xorBytes(data[base:], data[base:], tbl)
-}
-
-func currentMs() uint32 {
-	return uint32(time.Now().UnixNano() / int64(time.Millisecond))
 }
