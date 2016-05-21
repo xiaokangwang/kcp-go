@@ -10,19 +10,21 @@ const (
 	typeFEC            = 1<<16 - 1
 )
 
-// FEC defines forward error correction for packets
-type FEC struct {
-	rx      []fecPacket // orderedr rx queue
-	rxlimit int         // queue size limit
-	cluster int         // fec cluster size
-	next    uint32      // next seqid
-}
+type (
+	// FEC defines forward error correction for packets
+	FEC struct {
+		rx      []fecPacket // orderedr rx queue
+		rxlimit int         // queue size limit
+		cluster int         // fec cluster size
+		next    uint32      // next seqid
+	}
 
-type fecPacket struct {
-	seqid uint32
-	isfec uint16
-	data  []byte
-}
+	fecPacket struct {
+		seqid uint32
+		isfec uint16
+		data  []byte
+	}
+)
 
 func newFEC(cluster, rxlimit int) *FEC {
 	if cluster < 1 || rxlimit < cluster {
