@@ -365,17 +365,15 @@ func (s *UDPSession) notifyReadEvent() {
 }
 
 func (s *UDPSession) kcpInput(data []byte) {
-	f := fecDecode(data)
 	s.mu.Lock()
 	if s.fec != nil {
+		f := fecDecode(data)
 		if f.isfec == typeData {
 			s.kcp.Input(f.data[2:])
-			s.fec.input(f)
-		} else if f.isfec == typeFEC {
-			if ecc := s.fec.input(f); ecc != nil {
-				sz := binary.LittleEndian.Uint16(ecc)
-				s.kcp.Input(ecc[2:sz])
-			}
+		}
+		if ecc := s.fec.input(f); ecc != nil {
+			sz := binary.LittleEndian.Uint16(ecc)
+			s.kcp.Input(ecc[2:sz])
 		}
 	} else {
 		s.kcp.Input(data)
