@@ -255,18 +255,15 @@ func (s *UDPSession) SetRetries(n int) {
 }
 
 func (s *UDPSession) outputTask() {
+	var fec_group [][]byte
 	fecOffset := 0
 	if s.block != nil {
 		fecOffset = cryptHeaderSize
 	}
 
-	var fec_group [][]byte
-	var count uint32
-
 	for {
 		select {
 		case ext := <-s.chUDPOutput:
-			count++
 			var ecc []byte
 			if s.fec != nil {
 				s.fec.markData(ext[fecOffset:])
@@ -277,14 +274,12 @@ func (s *UDPSession) outputTask() {
 				extcopy := make([]byte, len(ext))
 				copy(extcopy, ext)
 				fec_group = append(fec_group, extcopy)
-				if len(fec_group) > s.fec.cluster {
-					fec_group = fec_group[1:]
-				}
 
 				// cacluation of ecc
-				if count%uint32(s.fec.cluster) == 0 {
+				if len(fec_group) == s.fec.cluster {
 					ecc = s.fec.calcECC(fec_group)
 					s.fec.markFEC(ecc[fecOffset:])
+					fec_group = nil
 				}
 			}
 
@@ -302,7 +297,7 @@ func (s *UDPSession) outputTask() {
 				}
 			}
 
-			//if rand.Intn(100) < 90 {
+			//if rand.Intn(100) < 80 {
 			n, err := s.conn.WriteTo(ext, s.remote)
 			if err != nil {
 				log.Println(err, n)
