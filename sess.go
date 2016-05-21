@@ -35,10 +35,10 @@ const (
 )
 
 const (
-	basePort       = 20000 // minimum port for listening
-	maxPort        = 65535 // maximum port for listening
-	defaultWndSize = 128   // default window size, in packet
-	cryptSize      = aes.BlockSize + md5.Size
+	basePort        = 20000 // minimum port for listening
+	maxPort         = 65535 // maximum port for listening
+	defaultWndSize  = 128   // default window size, in packet
+	cryptHeaderSize = aes.BlockSize + md5.Size
 )
 
 type (
@@ -80,7 +80,7 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 
 	// caculate header size
 	if sess.block != nil {
-		sess.headerSize += cryptSize
+		sess.headerSize += cryptHeaderSize
 	}
 	if sess.fec != nil {
 		sess.headerSize += fecHeaderSizePlus2
@@ -257,7 +257,7 @@ func (s *UDPSession) SetRetries(n int) {
 func (s *UDPSession) outputTask() {
 	fecOffset := 0
 	if s.fec != nil && s.block != nil {
-		fecOffset = cryptSize
+		fecOffset = cryptHeaderSize
 	}
 
 	var fec_group [][]byte
@@ -287,7 +287,7 @@ func (s *UDPSession) outputTask() {
 
 			if s.block != nil {
 				io.ReadFull(crand.Reader, ext[:aes.BlockSize]) // OTP
-				checksum := md5.Sum(ext[cryptSize:])
+				checksum := md5.Sum(ext[cryptHeaderSize:])
 				copy(ext[aes.BlockSize:], checksum[:])
 				encrypt(s.block, ext)
 			}
@@ -302,7 +302,7 @@ func (s *UDPSession) outputTask() {
 			if ecc != nil {
 				if s.block != nil {
 					io.ReadFull(crand.Reader, ecc[:aes.BlockSize]) // OTP
-					checksum := md5.Sum(ecc[cryptSize:])
+					checksum := md5.Sum(ecc[cryptHeaderSize:])
 					copy(ecc[aes.BlockSize:], checksum[:])
 					encrypt(s.block, ecc)
 				}
@@ -572,7 +572,7 @@ func ListenEncrypted(mode Mode, fec int, laddr string, key []byte) (*Listener, e
 
 	// caculate header size
 	if l.block != nil {
-		l.headerSize += cryptSize
+		l.headerSize += cryptHeaderSize
 	}
 	if l.fec > 0 {
 		l.headerSize += fecHeaderSizePlus2
