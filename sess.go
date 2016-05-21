@@ -38,7 +38,7 @@ const (
 	basePort        = 20000 // minimum port for listening
 	maxPort         = 65535 // maximum port for listening
 	defaultWndSize  = 128   // default window size, in packet
-	maxWaitSnd      = 65535 // max waitsnd queue size in kcp
+	maxWaitSnd      = 16384 // max waitsnd queue size in kcp
 	cryptHeaderSize = aes.BlockSize + md5.Size
 )
 
