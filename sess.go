@@ -38,7 +38,9 @@ const (
 	basePort        = 20000 // minimum port for listening
 	maxPort         = 65535 // maximum port for listening
 	defaultWndSize  = 128   // default window size, in packet
-	cryptHeaderSize = aes.BlockSize + md5.Size
+	otpSize         = 4     // 4bytes magic number
+	crcSize         = 4     // 4bytes packet checksum
+	cryptHeaderSize = otpSize + crcSize
 )
 
 type (
@@ -285,15 +287,15 @@ func (s *UDPSession) outputTask() {
 			}
 
 			if s.block != nil {
-				io.ReadFull(crand.Reader, ext[:aes.BlockSize]) // OTP
+				io.ReadFull(crand.Reader, ext[:otpSize]) // OTP
 				checksum := md5.Sum(ext[cryptHeaderSize:])
-				copy(ext[aes.BlockSize:], checksum[:])
+				copy(ext[otpSize:], checksum[:crcSize])
 				encrypt(s.block, ext)
 
 				if ecc != nil {
-					io.ReadFull(crand.Reader, ecc[:aes.BlockSize])
+					io.ReadFull(crand.Reader, ecc[:otpSize])
 					checksum := md5.Sum(ecc[cryptHeaderSize:])
-					copy(ecc[aes.BlockSize:], checksum[:])
+					copy(ecc[otpSize:], checksum[:crcSize])
 					encrypt(s.block, ecc)
 				}
 			}
@@ -394,10 +396,10 @@ func (s *UDPSession) readLoop() {
 			data := buffer[:n]
 			if s.block != nil {
 				decrypt(s.block, data)
-				data = data[aes.BlockSize:]
-				checksum := md5.Sum(data[md5.Size:])
-				if bytes.Equal(checksum[:], data[:md5.Size]) {
-					data = data[md5.Size:]
+				data = data[otpSize:]
+				checksum := md5.Sum(data[crcSize:])
+				if bytes.Equal(checksum[:crcSize], data[:crcSize]) {
+					data = data[crcSize:]
 					dataValid = true
 				}
 			} else if s.block == nil {
@@ -447,10 +449,10 @@ func (l *Listener) monitor() {
 			dataValid := false
 			if l.block != nil {
 				decrypt(l.block, data)
-				data = data[aes.BlockSize:]
-				checksum := md5.Sum(data[md5.Size:])
-				if bytes.Equal(checksum[:], data[:md5.Size]) {
-					data = data[md5.Size:]
+				data = data[otpSize:]
+				checksum := md5.Sum(data[crcSize:])
+				if bytes.Equal(checksum[:crcSize], data[:crcSize]) {
+					data = data[crcSize:]
 					dataValid = true
 				}
 			} else if l.block == nil {
