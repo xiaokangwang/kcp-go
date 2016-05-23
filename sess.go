@@ -411,9 +411,10 @@ func (s *UDPSession) kcpInput(data []byte) {
 	} else {
 		s.kcp.Input(data)
 	}
-	s.needUpdate = true
 	if s.packets_received%forceUpdatePackets == 0 {
 		s.kcp.Update(currentMs())
+	} else {
+		s.needUpdate = true
 	}
 	s.mu.Unlock()
 	s.notifyReadEvent()
