@@ -41,6 +41,7 @@ const (
 	otpSize         = 4     // 4bytes magic number
 	crcSize         = 4     // 4bytes packet checksum
 	cryptHeaderSize = otpSize + crcSize
+	connTimeout     = 60 * time.Second
 )
 
 type (
@@ -62,6 +63,7 @@ type (
 		chTicker      chan time.Time
 		chUDPOutput   chan []byte
 		headerSize    int
+		lastInputTs   time.Time
 	}
 )
 
@@ -77,6 +79,7 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 	sess.conn = conn
 	sess.l = l
 	sess.block = block
+	sess.lastInputTs = time.Now()
 	if fec > 0 {
 		sess.fec = newFEC(fec, 128)
 	}
@@ -267,7 +270,6 @@ func (s *UDPSession) outputTask() {
 	// ping
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	ping := make([]byte, IKCP_OVERHEAD-1)
 
 	for {
 		select {
@@ -319,7 +321,19 @@ func (s *UDPSession) outputTask() {
 				}
 			}
 		case <-ticker.C:
-			io.ReadFull(crand.Reader, ping)
+			ping := make([]byte, s.headerSize+IKCP_OVERHEAD)
+			if s.fec != nil {
+				s.fec.markData(ping[fecOffset:])
+				binary.LittleEndian.PutUint16(ping[fecOffset+fecHeaderSize:], uint16(len(ping[fecOffset+fecHeaderSize:])))
+			}
+
+			if s.block != nil {
+				io.ReadFull(crand.Reader, ping[:otpSize]) // OTP
+				checksum := md5.Sum(ping[cryptHeaderSize:])
+				copy(ping[otpSize:], checksum[:crcSize])
+				encrypt(s.block, ping)
+			}
+
 			n, err := s.conn.WriteTo(ping, s.remote)
 			if err != nil {
 				log.Println(err, n)
@@ -352,11 +366,7 @@ func (s *UDPSession) updateTask() {
 				nextupdate = s.kcp.Check(current)
 			}
 			s.needUpdate = false
-			state := s.kcp.state
 			s.mu.Unlock()
-			if state != 0 { // deadlink
-				s.Close()
-			}
 		case <-s.die:
 			if s.l != nil { // has listener
 				s.l.chDeadlinks <- s.remote
@@ -379,6 +389,13 @@ func (s *UDPSession) notifyReadEvent() {
 }
 
 func (s *UDPSession) kcpInput(data []byte) {
+	now := time.Now()
+	if now.Sub(s.lastInputTs) > connTimeout {
+		s.Close()
+		return
+	}
+	s.lastInputTs = now
+
 	s.mu.Lock()
 	if s.fec != nil {
 		f := fecDecode(data)
