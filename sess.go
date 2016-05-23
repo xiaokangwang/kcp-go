@@ -1,14 +1,13 @@
 package kcp
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/md5"
 	crand "crypto/rand"
 	"crypto/sha1"
 	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"io"
 	"log"
 	"math/rand"
@@ -295,14 +294,14 @@ func (s *UDPSession) outputTask() {
 
 			if s.block != nil {
 				io.ReadFull(crand.Reader, ext[:otpSize]) // OTP
-				checksum := md5.Sum(ext[cryptHeaderSize:])
-				copy(ext[otpSize:], checksum[:crcSize])
+				checksum := crc32.ChecksumIEEE(ext[cryptHeaderSize:])
+				binary.LittleEndian.PutUint32(ext[otpSize:], checksum)
 				encrypt(s.block, ext)
 
 				if ecc != nil {
 					io.ReadFull(crand.Reader, ecc[:otpSize])
-					checksum := md5.Sum(ecc[cryptHeaderSize:])
-					copy(ecc[otpSize:], checksum[:crcSize])
+					checksum := crc32.ChecksumIEEE(ecc[cryptHeaderSize:])
+					binary.LittleEndian.PutUint32(ecc[otpSize:], checksum)
 					encrypt(s.block, ecc)
 				}
 			}
@@ -324,8 +323,8 @@ func (s *UDPSession) outputTask() {
 			ping := make([]byte, s.headerSize+IKCP_OVERHEAD)
 			if s.block != nil {
 				io.ReadFull(crand.Reader, ping[:otpSize]) // OTP
-				checksum := md5.Sum(ping[cryptHeaderSize:])
-				copy(ping[otpSize:], checksum[:crcSize])
+				checksum := crc32.ChecksumIEEE(ping[cryptHeaderSize:])
+				binary.LittleEndian.PutUint32(ping[otpSize:], checksum)
 				encrypt(s.block, ping)
 			}
 
@@ -423,8 +422,8 @@ func (s *UDPSession) readLoop() {
 			if s.block != nil {
 				decrypt(s.block, data)
 				data = data[otpSize:]
-				checksum := md5.Sum(data[crcSize:])
-				if bytes.Equal(checksum[:crcSize], data[:crcSize]) {
+				checksum := crc32.ChecksumIEEE(data[crcSize:])
+				if checksum == binary.LittleEndian.Uint32(data[:crcSize]) {
 					data = data[crcSize:]
 					dataValid = true
 				}
@@ -476,8 +475,8 @@ func (l *Listener) monitor() {
 			if l.block != nil {
 				decrypt(l.block, data)
 				data = data[otpSize:]
-				checksum := md5.Sum(data[crcSize:])
-				if bytes.Equal(checksum[:crcSize], data[:crcSize]) {
+				checksum := crc32.ChecksumIEEE(data[crcSize:])
+				if checksum == binary.LittleEndian.Uint32(data[:crcSize]) {
 					data = data[crcSize:]
 					dataValid = true
 				}
