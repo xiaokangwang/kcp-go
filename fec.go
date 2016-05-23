@@ -7,7 +7,7 @@ const (
 	fecHeaderSizePlus2 = fecHeaderSize + 2 // plus 2B data size
 	fecOverflow        = 1e7
 	typeData           = 0
-	typeFEC            = 1
+	typeFEC            = 1<<16 - 1
 )
 
 type (
@@ -104,8 +104,11 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 				fec.rx[first+1].seqid == ecc.seqid-uint32(fec.cluster)+1) {
 				// recoverable data, eg: [2,3,[4]], [1,3,[4]], [1,2,[4]]
 				recovered = ecc.data
+				buf := make([]byte, len(recovered))
 				for j := first + 1; j < i; j++ {
-					xorBytes(recovered, recovered, fec.rx[j].data)
+					copy(buf, fec.rx[j].data)
+					xorBytes(recovered, recovered, buf)
+					xorBytes(buf, buf, buf)
 				}
 				copy(fec.rx[first+1:], fec.rx[i+1:])
 				fec.rx = fec.rx[:len(fec.rx)-fec.cluster]
@@ -136,19 +139,20 @@ func (fec *FEC) calcECC(data [][]byte) []byte {
 		return nil
 	}
 
-	ecc := data[0]
-	ecc_idx := 0
+	maxlen := len(data[0])
 	for i := 1; i < len(data); i++ {
-		if len(ecc) < len(data[i]) {
-			ecc = data[i]
-			ecc_idx = i
+		if maxlen < len(data[i]) {
+			maxlen = len(data[i])
 		}
 	}
 
-	for i := 0; i < len(data); i++ {
-		if i != ecc_idx {
-			xorBytes(ecc, ecc, data[i])
-		}
+	ecc := make([]byte, maxlen)
+	buf := make([]byte, maxlen)
+	copy(ecc, data[0])
+	for i := 1; i < len(data); i++ {
+		copy(buf, data[i])
+		xorBytes(ecc, ecc, buf)
+		xorBytes(buf, buf, buf) // clear
 	}
 	return ecc
 }
