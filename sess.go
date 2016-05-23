@@ -423,7 +423,7 @@ func (s *UDPSession) readLoop() {
 				decrypt(s.block, data)
 				data = data[otpSize:]
 				checksum := crc32.ChecksumIEEE(data[crcSize:])
-				if checksum == binary.LittleEndian.Uint32(data[:crcSize]) {
+				if checksum == binary.LittleEndian.Uint32(data) {
 					data = data[crcSize:]
 					dataValid = true
 				}
@@ -476,7 +476,7 @@ func (l *Listener) monitor() {
 				decrypt(l.block, data)
 				data = data[otpSize:]
 				checksum := crc32.ChecksumIEEE(data[crcSize:])
-				if checksum == binary.LittleEndian.Uint32(data[:crcSize]) {
+				if checksum == binary.LittleEndian.Uint32(data) {
 					data = data[crcSize:]
 					dataValid = true
 				}
