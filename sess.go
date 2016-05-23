@@ -352,13 +352,11 @@ func (s *UDPSession) updateTask() {
 				nextupdate = s.kcp.Check(current)
 			}
 			s.needUpdate = false
-			//state := s.kcp.state
+			state := s.kcp.state
 			s.mu.Unlock()
-			/*
-				if state != 0 { // deadlink
-					s.Close()
-				}
-			*/
+			if state != 0 { // deadlink
+				s.Close()
+			}
 		case <-s.die:
 			if s.l != nil { // has listener
 				s.l.chDeadlinks <- s.remote
