@@ -420,6 +420,8 @@ func (s *UDPSession) readLoop() {
 			if dataValid {
 				s.kcpInput(data)
 			}
+		} else if err != nil {
+			return
 		}
 	}
 }
@@ -516,7 +518,7 @@ func (l *Listener) receiver(ch chan packet) {
 		data := make([]byte, 4096)
 		if n, from, err := l.conn.ReadFromUDP(data); err == nil && n >= l.headerSize+IKCP_OVERHEAD {
 			ch <- packet{from, data[:n]}
-		} else {
+		} else if err != nil {
 			return
 		}
 	}
