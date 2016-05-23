@@ -188,7 +188,7 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 			b = b[max:]
 		}
 	}
-	s.needUpdate = true
+	s.kcp.Update(currentMs())
 	return
 }
 
@@ -666,4 +666,8 @@ func decrypt(block cipher.Block, data []byte) {
 		base += aes.BlockSize
 	}
 	xorBytes(data[base:], data[base:], tbl)
+}
+
+func currentMs() uint32 {
+	return uint32(time.Now().UnixNano() / int64(time.Millisecond))
 }
