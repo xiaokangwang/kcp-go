@@ -319,6 +319,7 @@ func (s *UDPSession) outputTask() {
 				}
 			}
 		case <-ticker.C:
+			println("test")
 			io.ReadFull(crand.Reader, ping)
 			n, err := s.conn.WriteTo(ping, s.remote)
 			if err != nil {
@@ -420,8 +421,6 @@ func (s *UDPSession) readLoop() {
 			if dataValid {
 				s.kcpInput(data)
 			}
-		} else {
-			return
 		}
 	}
 }
