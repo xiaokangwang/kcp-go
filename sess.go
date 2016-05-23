@@ -322,10 +322,6 @@ func (s *UDPSession) outputTask() {
 			}
 		case <-ticker.C:
 			ping := make([]byte, s.headerSize+IKCP_OVERHEAD)
-			if s.fec != nil {
-				binary.LittleEndian.PutUint16(ping[fecOffset+fecHeaderSize:], uint16(len(ping[fecOffset+fecHeaderSize:])))
-			}
-
 			if s.block != nil {
 				io.ReadFull(crand.Reader, ping[:otpSize]) // OTP
 				checksum := md5.Sum(ping[cryptHeaderSize:])
