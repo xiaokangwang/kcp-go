@@ -323,7 +323,6 @@ func (s *UDPSession) outputTask() {
 		case <-ticker.C:
 			ping := make([]byte, s.headerSize+IKCP_OVERHEAD)
 			if s.fec != nil {
-				s.fec.markData(ping[fecOffset:])
 				binary.LittleEndian.PutUint16(ping[fecOffset+fecHeaderSize:], uint16(len(ping[fecOffset+fecHeaderSize:])))
 			}
 
@@ -402,9 +401,12 @@ func (s *UDPSession) kcpInput(data []byte) {
 		if f.flag == typeData {
 			s.kcp.Input(f.data[2:]) // skip 2B size
 		}
-		if ecc := s.fec.input(f); ecc != nil {
-			sz := binary.LittleEndian.Uint16(ecc)
-			s.kcp.Input(ecc[2:sz])
+
+		if f.flag == typeData || f.flag == typeFEC {
+			if ecc := s.fec.input(f); ecc != nil {
+				sz := binary.LittleEndian.Uint16(ecc)
+				s.kcp.Input(ecc[2:sz])
+			}
 		}
 	} else {
 		s.kcp.Input(data)

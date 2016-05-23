@@ -6,8 +6,8 @@ const (
 	fecHeaderSize      = 6
 	fecHeaderSizePlus2 = fecHeaderSize + 2 // plus 2B data size
 	fecOverflow        = 1e7
-	typeData           = 0
-	typeFEC            = 1
+	typeData           = 0xf1
+	typeFEC            = 0xf2
 )
 
 type (
