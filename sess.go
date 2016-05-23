@@ -264,6 +264,11 @@ func (s *UDPSession) outputTask() {
 		fecOffset = cryptHeaderSize
 	}
 
+	// ping
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	ping := make([]byte, IKCP_OVERHEAD-1)
+
 	for {
 		select {
 		case ext := <-s.chUDPOutput:
@@ -312,6 +317,12 @@ func (s *UDPSession) outputTask() {
 				if err != nil {
 					log.Println(err, n)
 				}
+			}
+		case <-ticker.C:
+			io.ReadFull(crand.Reader, ping)
+			n, err := s.conn.WriteTo(ping, s.remote)
+			if err != nil {
+				log.Println(err, n)
 			}
 		case <-s.die:
 			return
