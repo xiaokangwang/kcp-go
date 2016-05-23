@@ -35,14 +35,13 @@ const (
 )
 
 const (
-	basePort           = 20000 // minimum port for listening
-	maxPort            = 65535 // maximum port for listening
-	defaultWndSize     = 128   // default window size, in packet
-	otpSize            = 4     // 4bytes magic number
-	crcSize            = 4     // 4bytes packet checksum
-	cryptHeaderSize    = otpSize + crcSize
-	connTimeout        = 60 * time.Second
-	forceUpdatePackets = 64
+	basePort        = 20000 // minimum port for listening
+	maxPort         = 65535 // maximum port for listening
+	defaultWndSize  = 128   // default window size, in packet
+	otpSize         = 4     // 4bytes magic number
+	crcSize         = 4     // 4bytes packet checksum
+	cryptHeaderSize = otpSize + crcSize
+	connTimeout     = 60 * time.Second
 )
 
 type (
@@ -65,8 +64,6 @@ type (
 		chUDPOutput   chan []byte
 		headerSize    int
 		lastInputTs   time.Time
-		//
-		packets_received uint32
 	}
 )
 
@@ -387,7 +384,6 @@ func (s *UDPSession) notifyReadEvent() {
 }
 
 func (s *UDPSession) kcpInput(data []byte) {
-	s.packets_received++
 	now := time.Now()
 	if now.Sub(s.lastInputTs) > connTimeout {
 		s.Close()
@@ -411,11 +407,7 @@ func (s *UDPSession) kcpInput(data []byte) {
 	} else {
 		s.kcp.Input(data)
 	}
-	if s.packets_received%forceUpdatePackets == 0 {
-		s.kcp.Update(currentMs())
-	} else {
-		s.needUpdate = true
-	}
+	s.needUpdate = true
 	s.mu.Unlock()
 	s.notifyReadEvent()
 }
