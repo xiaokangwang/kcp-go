@@ -43,7 +43,7 @@ const (
 	crcSize         = 4             // 4bytes packet checksum
 	cryptHeaderSize = otpSize + crcSize
 	connTimeout     = 60 * time.Second
-	soTOS           = 184 // DSCP: 46 Expedited forwarding (EF)	N/A	101 Critical , 101 110 00
+	soTOS           = 46 // DSCP: 46 Expedited forwarding (EF)	N/A	101 Critical , 101 110
 )
 
 type (
