@@ -638,12 +638,17 @@ func DialEncrypted(mode Mode, fec int, raddr string, key []byte) (*UDPSession, e
 	}
 }
 
-// packet encryption with local CFB mode
+// packet encryption/decryption with local CFB mode
+// at least aes.BlockSize bytes of data is required to work
 func encrypt(block cipher.Block, data []byte) {
+	// encrypt first block
 	tbl := make([]byte, aes.BlockSize)
-	block.Encrypt(tbl, initialVector)
-	n := len(data) / aes.BlockSize
-	base := 0
+	block.Encrypt(data, data)
+	copy(tbl, data)
+
+	// CFB
+	n := len(data)/aes.BlockSize - 1
+	base := aes.BlockSize
 	for i := 0; i < n; i++ {
 		xorWords(data[base:], data[base:], tbl)
 		block.Encrypt(tbl, data[base:])
@@ -653,11 +658,15 @@ func encrypt(block cipher.Block, data []byte) {
 }
 
 func decrypt(block cipher.Block, data []byte) {
+	// decrypt first block
 	tbl := make([]byte, aes.BlockSize)
 	next := make([]byte, aes.BlockSize)
-	block.Encrypt(tbl, initialVector)
-	n := len(data) / aes.BlockSize
-	base := 0
+	copy(tbl, data)
+	block.Decrypt(data, data)
+
+	// CFB
+	n := len(data)/aes.BlockSize - 1
+	base := aes.BlockSize
 	for i := 0; i < n; i++ {
 		block.Encrypt(next, data[base:])
 		xorWords(data[base:], data[base:], tbl)
