@@ -61,7 +61,7 @@ type (
 		die           chan struct{}
 		isClosed      bool
 		mu            sync.Mutex
-		chReadEvent   chan bool
+		chReadEvent   chan struct{}
 		chTicker      chan time.Time
 		chUDPOutput   chan []byte
 		headerSize    int
@@ -76,7 +76,7 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 	sess.chUDPOutput = make(chan []byte, defaultWndSize)
 	sess.die = make(chan struct{})
 	sess.local = conn.LocalAddr()
-	sess.chReadEvent = make(chan bool, 1)
+	sess.chReadEvent = make(chan struct{}, 1)
 	sess.remote = remote
 	sess.conn = conn
 	sess.l = l
@@ -380,7 +380,7 @@ func (s *UDPSession) GetConv() uint32 {
 
 func (s *UDPSession) notifyReadEvent() {
 	select {
-	case s.chReadEvent <- true:
+	case s.chReadEvent <- struct{}{}:
 	default:
 	}
 }
