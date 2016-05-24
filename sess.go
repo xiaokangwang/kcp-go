@@ -37,7 +37,7 @@ const (
 	basePort        = 20000 // minimum port for listening
 	maxPort         = 65535 // maximum port for listening
 	defaultWndSize  = 128   // default window size, in packet
-	otpSize         = 4     // 4bytes magic number
+	otpSize         = 16    // 16bytes magic number
 	crcSize         = 4     // 4bytes packet checksum
 	cryptHeaderSize = otpSize + crcSize
 	connTimeout     = 60 * time.Second
@@ -638,17 +638,12 @@ func DialEncrypted(mode Mode, fec int, raddr string, key []byte) (*UDPSession, e
 	}
 }
 
-// packet encryption/decryption with local CFB mode
-// at least aes.BlockSize bytes of data is required to work
+// packet encryption with local CFB mode
 func encrypt(block cipher.Block, data []byte) {
-	// encrypt first block
 	tbl := make([]byte, aes.BlockSize)
-	block.Encrypt(data, data)
-	copy(tbl, data)
-
-	// CFB
-	n := len(data)/aes.BlockSize - 1
-	base := aes.BlockSize
+	block.Encrypt(tbl, initialVector)
+	n := len(data) / aes.BlockSize
+	base := 0
 	for i := 0; i < n; i++ {
 		xorWords(data[base:], data[base:], tbl)
 		block.Encrypt(tbl, data[base:])
@@ -658,15 +653,11 @@ func encrypt(block cipher.Block, data []byte) {
 }
 
 func decrypt(block cipher.Block, data []byte) {
-	// decrypt first block
 	tbl := make([]byte, aes.BlockSize)
 	next := make([]byte, aes.BlockSize)
-	copy(tbl, data)
-	block.Decrypt(data, data)
-
-	// CFB
-	n := len(data)/aes.BlockSize - 1
-	base := aes.BlockSize
+	block.Encrypt(tbl, initialVector)
+	n := len(data) / aes.BlockSize
+	base := 0
 	for i := 0; i < n; i++ {
 		block.Encrypt(next, data[base:])
 		xorWords(data[base:], data[base:], tbl)
