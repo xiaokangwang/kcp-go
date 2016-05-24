@@ -263,6 +263,7 @@ func (s *UDPSession) SetRetries(n int) {
 }
 
 func (s *UDPSession) outputTask() {
+	encbuf := make([]byte, aes.BlockSize)
 	var fec_group [][]byte
 	fecOffset := 0
 	if s.block != nil {
@@ -272,7 +273,6 @@ func (s *UDPSession) outputTask() {
 	// ping
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case ext := <-s.chUDPOutput:
@@ -299,13 +299,13 @@ func (s *UDPSession) outputTask() {
 				io.ReadFull(crand.Reader, ext[:otpSize]) // OTP
 				checksum := crc32.ChecksumIEEE(ext[cryptHeaderSize:])
 				binary.LittleEndian.PutUint32(ext[otpSize:], checksum)
-				encrypt(s.block, ext)
+				encrypt(s.block, ext, encbuf)
 
 				if ecc != nil {
 					io.ReadFull(crand.Reader, ecc[:otpSize])
 					checksum := crc32.ChecksumIEEE(ecc[cryptHeaderSize:])
 					binary.LittleEndian.PutUint32(ecc[otpSize:], checksum)
-					encrypt(s.block, ecc)
+					encrypt(s.block, ecc, encbuf)
 				}
 			}
 
@@ -328,7 +328,7 @@ func (s *UDPSession) outputTask() {
 				io.ReadFull(crand.Reader, ping[:otpSize]) // OTP
 				checksum := crc32.ChecksumIEEE(ping[cryptHeaderSize:])
 				binary.LittleEndian.PutUint32(ping[otpSize:], checksum)
-				encrypt(s.block, ping)
+				encrypt(s.block, ping, encbuf)
 			}
 
 			n, err := s.conn.WriteTo(ping, s.remote)
@@ -418,12 +418,13 @@ func (s *UDPSession) kcpInput(data []byte) {
 func (s *UDPSession) readLoop() {
 	conn := s.conn
 	buffer := make([]byte, 4096)
+	decbuf := make([]byte, 2*aes.BlockSize)
 	for {
 		if n, err := conn.Read(buffer); err == nil && n >= s.headerSize+IKCP_OVERHEAD {
 			dataValid := false
 			data := buffer[:n]
 			if s.block != nil {
-				decrypt(s.block, data)
+				decrypt(s.block, data, decbuf)
 				data = data[otpSize:]
 				checksum := crc32.ChecksumIEEE(data[crcSize:])
 				if checksum == binary.LittleEndian.Uint32(data) {
@@ -466,6 +467,7 @@ type (
 // monitor incoming data for all connections of server
 func (l *Listener) monitor() {
 	chPacket := make(chan packet, 1024)
+	decbuf := make([]byte, 2*aes.BlockSize)
 	go l.receiver(chPacket)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
@@ -476,7 +478,7 @@ func (l *Listener) monitor() {
 			from := p.from
 			dataValid := false
 			if l.block != nil {
-				decrypt(l.block, data)
+				decrypt(l.block, data, decbuf)
 				data = data[otpSize:]
 				checksum := crc32.ChecksumIEEE(data[crcSize:])
 				if checksum == binary.LittleEndian.Uint32(data) {
@@ -648,8 +650,8 @@ func DialEncrypted(mode Mode, fec int, raddr string, key []byte) (*UDPSession, e
 }
 
 // packet encryption with local CFB mode
-func encrypt(block cipher.Block, data []byte) {
-	tbl := make([]byte, aes.BlockSize)
+func encrypt(block cipher.Block, data []byte, buf []byte) {
+	tbl := buf[:aes.BlockSize]
 	block.Encrypt(tbl, initialVector)
 	n := len(data) / aes.BlockSize
 	base := 0
@@ -661,9 +663,9 @@ func encrypt(block cipher.Block, data []byte) {
 	xorBytes(data[base:], data[base:], tbl)
 }
 
-func decrypt(block cipher.Block, data []byte) {
-	tbl := make([]byte, aes.BlockSize)
-	next := make([]byte, aes.BlockSize)
+func decrypt(block cipher.Block, data []byte, buf []byte) {
+	tbl := buf[:aes.BlockSize]
+	next := buf[aes.BlockSize:]
 	block.Encrypt(tbl, initialVector)
 	n := len(data) / aes.BlockSize
 	base := 0
