@@ -34,11 +34,11 @@ const (
 )
 
 const (
-	basePort        = 20000 // minimum port for listening
-	maxPort         = 65535 // maximum port for listening
-	defaultWndSize  = 128   // default window size, in packet
-	otpSize         = 16    // 16bytes magic number
-	crcSize         = 4     // 4bytes packet checksum
+	basePort        = 20000         // minimum port for listening
+	maxPort         = 65535         // maximum port for listening
+	defaultWndSize  = 128           // default window size, in packet
+	otpSize         = aes.BlockSize // magic number
+	crcSize         = 4             // 4bytes packet checksum
 	cryptHeaderSize = otpSize + crcSize
 	connTimeout     = 60 * time.Second
 )
