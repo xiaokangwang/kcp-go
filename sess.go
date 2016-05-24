@@ -14,6 +14,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"golang.org/x/net/ipv4"
 )
 
 var (
@@ -41,6 +43,7 @@ const (
 	crcSize         = 4             // 4bytes packet checksum
 	cryptHeaderSize = otpSize + crcSize
 	connTimeout     = 60 * time.Second
+	soTOS           = 46 // DSCP: 46 Expedited forwarding (EF)	N/A	101 Critical
 )
 
 type (
@@ -580,6 +583,9 @@ func ListenEncrypted(mode Mode, fec int, laddr string, key []byte) (*Listener, e
 	if err != nil {
 		return nil, err
 	}
+	if err := ipv4.NewConn(conn).SetTOS(soTOS); err != nil {
+		log.Println("set tos:", err)
+	}
 
 	l := new(Listener)
 	l.conn = conn
@@ -625,6 +631,9 @@ func DialEncrypted(mode Mode, fec int, raddr string, key []byte) (*UDPSession, e
 	for {
 		port := basePort + rand.Int()%(maxPort-basePort)
 		if udpconn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port}); err == nil {
+			if err := ipv4.NewConn(udpconn).SetTOS(soTOS); err != nil {
+				log.Println("set tos:", err)
+			}
 			if key != nil && len(key) > 0 {
 				pass := pbkdf2(key, []byte(salt), 4096, 32, sha1.New)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
