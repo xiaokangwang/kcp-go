@@ -33,7 +33,7 @@ func init() {
 
 func handle_client(conn *UDPSession) {
 	conn.SetWindowSize(1024, 1024)
-	conn.SetRetries(100)
+	conn.SetACKNoDelay(true)
 	fmt.Println("new client", conn.RemoteAddr())
 	buf := make([]byte, 65536)
 	count := 0
@@ -62,7 +62,6 @@ func client(wg *sync.WaitGroup) {
 	if err != nil {
 		panic(err)
 	}
-	cli.SetRetries(100)
 	const N = 100
 	buf := make([]byte, 10)
 	for i := 0; i < N; i++ {
@@ -91,7 +90,6 @@ func client2(wg *sync.WaitGroup) {
 	if err != nil {
 		panic(err)
 	}
-	cli.SetRetries(100)
 	const N = 10
 	buf := make([]byte, 1024*512)
 	msg := make([]byte, 1024*512)
@@ -133,10 +131,10 @@ func client3(wg *sync.WaitGroup) {
 	if err != nil {
 		panic(err)
 	}
-	cli.SetRetries(100)
 	msg := make([]byte, 4096)
 	buf := make([]byte, 1024*1024)
 	cli.SetWindowSize(1024, 1024)
+	cli.SetACKNoDelay(true)
 	for i := 0; i < 4096; i++ {
 		cli.Write(msg)
 	}
@@ -175,7 +173,6 @@ func client4(wg *sync.WaitGroup) {
 	if err != nil {
 		panic(err)
 	}
-	cli.SetRetries(100)
 	const N = 100
 	buf := make([]byte, 10)
 	for i := 0; i < N; i++ {

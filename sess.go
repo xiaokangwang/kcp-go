@@ -66,6 +66,7 @@ type (
 		chUDPOutput   chan []byte
 		headerSize    int
 		lastInputTs   time.Time
+		ackNoDelay    bool
 	}
 )
 
@@ -262,6 +263,13 @@ func (s *UDPSession) SetRetries(n int) {
 	s.kcp.dead_link = uint32(n)
 }
 
+// SetACKNoDelay changes ack flush option, set true to flush ack immediately,
+func (s *UDPSession) SetACKNoDelay(nodelay bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ackNoDelay = nodelay
+}
+
 func (s *UDPSession) outputTask() {
 	encbuf := make([]byte, aes.BlockSize)
 	var fec_group [][]byte
@@ -409,7 +417,11 @@ func (s *UDPSession) kcpInput(data []byte) {
 	} else {
 		s.kcp.Input(data)
 	}
-	s.needUpdate = true
+	if s.ackNoDelay {
+		s.kcp.Update(currentMs())
+	} else {
+		s.needUpdate = true
+	}
 	s.mu.Unlock()
 	s.notifyReadEvent()
 }
