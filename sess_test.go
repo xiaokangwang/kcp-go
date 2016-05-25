@@ -33,7 +33,6 @@ func init() {
 
 func handle_client(conn *UDPSession) {
 	conn.SetWindowSize(1024, 1024)
-	conn.SetACKNoDelay(true)
 	fmt.Println("new client", conn.RemoteAddr())
 	buf := make([]byte, 65536)
 	count := 0
@@ -134,7 +133,6 @@ func client3(wg *sync.WaitGroup) {
 	msg := make([]byte, 4096)
 	buf := make([]byte, 1024*1024)
 	cli.SetWindowSize(1024, 1024)
-	cli.SetACKNoDelay(true)
 	for i := 0; i < 4096; i++ {
 		cli.Write(msg)
 	}

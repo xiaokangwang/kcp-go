@@ -681,6 +681,7 @@ func (kcp *KCP) flush() {
 			copy(ptr, segment.data)
 			ptr = ptr[len(segment.data):]
 
+			//println(segment.xmit)
 			if segment.xmit >= kcp.dead_link {
 				kcp.state = 0xFFFFFFFF
 			}
