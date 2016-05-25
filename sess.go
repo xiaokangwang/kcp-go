@@ -43,7 +43,6 @@ const (
 	crcSize         = 4             // 4bytes packet checksum
 	cryptHeaderSize = otpSize + crcSize
 	connTimeout     = 60 * time.Second
-	soTOS           = 46 << 2 // DSCP: 46 Expedited forwarding (EF)	N/A	101 Critical , 101 110
 )
 
 type (
@@ -268,6 +267,15 @@ func (s *UDPSession) SetACKNoDelay(nodelay bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ackNoDelay = nodelay
+}
+
+// SetDSCP sets the DSCP field of IP header
+func (s *UDPSession) SetDSCP(tos int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ipv4.NewConn(s.conn).SetTOS(tos << 2); err != nil {
+		log.Println("set tos:", err)
+	}
 }
 
 func (s *UDPSession) outputTask() {
@@ -597,9 +605,6 @@ func ListenEncrypted(mode Mode, fec int, laddr string, key []byte) (*Listener, e
 	if err != nil {
 		return nil, err
 	}
-	if err := ipv4.NewConn(conn).SetTOS(soTOS); err != nil {
-		log.Println("set tos:", err)
-	}
 
 	l := new(Listener)
 	l.conn = conn
@@ -645,9 +650,6 @@ func DialEncrypted(mode Mode, fec int, raddr string, key []byte) (*UDPSession, e
 	for {
 		port := basePort + rand.Int()%(maxPort-basePort)
 		if udpconn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port}); err == nil {
-			if err := ipv4.NewConn(udpconn).SetTOS(soTOS); err != nil {
-				log.Println("set tos:", err)
-			}
 			if key != nil && len(key) > 0 {
 				pass := pbkdf2(key, []byte(salt), 4096, 32, sha1.New)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
