@@ -190,7 +190,9 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 			b = b[max:]
 		}
 	}
-	s.kcp.Update(currentMs())
+	ms := currentMs()
+	s.kcp.Check(ms)
+	s.kcp.Update(ms)
 	return
 }
 
@@ -426,7 +428,9 @@ func (s *UDPSession) kcpInput(data []byte) {
 		s.kcp.Input(data)
 	}
 	if s.ackNoDelay {
-		s.kcp.Update(currentMs())
+		ms := currentMs()
+		s.kcp.Check(ms)
+		s.kcp.Update(ms)
 	} else {
 		s.needUpdate = true
 	}
