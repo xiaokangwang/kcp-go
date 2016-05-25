@@ -2,7 +2,7 @@ language: go
 go:
     - 1.6
 install:
-    - go build .
+    - go get github.com/xtaci/kcp-go
 before_script:
 script:
     - exit 0
