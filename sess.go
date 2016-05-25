@@ -190,8 +190,7 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 			b = b[max:]
 		}
 	}
-	s.kcp.current = currentMs()
-	s.kcp.flush()
+	s.kcp.Update(currentMs())
 	return
 }
 
