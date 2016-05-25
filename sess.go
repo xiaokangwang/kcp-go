@@ -371,9 +371,9 @@ func (s *UDPSession) updateTask() {
 	var nextupdate uint32
 	for {
 		select {
-		case now := <-tc:
-			current := uint32(now.UnixNano() / int64(time.Millisecond))
+		case <-tc:
 			s.mu.Lock()
+			current := currentMs()
 			if current >= nextupdate || s.needUpdate {
 				s.kcp.Update(current)
 				nextupdate = s.kcp.Check(current)
