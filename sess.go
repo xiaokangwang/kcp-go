@@ -158,12 +158,18 @@ func (s *UDPSession) Read(b []byte) (n int, err error) {
 			s.mu.Unlock()
 			return n, nil
 		}
+
+		var timeout <-chan time.Time
+		if !s.rd.IsZero() {
+			delay := s.rd.Sub(time.Now())
+			timeout = time.After(delay)
+		}
 		s.mu.Unlock()
 
 		// wait for read event or timeout
 		select {
 		case <-s.chReadEvent:
-		case <-time.After(1 * time.Second):
+		case <-timeout:
 		}
 	}
 }
