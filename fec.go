@@ -13,7 +13,7 @@ const (
 type (
 	// FEC defines forward error correction for packets
 	FEC struct {
-		rx      []fecPacket // orderedr rx queue
+		rx      []fecPacket // ordered rx queue
 		rxlimit int         // queue size limit
 		cluster int         // fec cluster size
 		next    uint32      // next seqid
