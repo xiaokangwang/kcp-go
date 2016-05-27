@@ -183,12 +183,9 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 	}
 
 	n = len(b)
-	max := int(s.kcp.mss * 255)
-	if s.kcp.snd_wnd < 255 {
-		max = int(s.kcp.mss * s.kcp.snd_wnd)
-	}
+	max := s.kcp.mss << 8
 	for {
-		if len(b) <= max { // in most cases
+		if len(b) <= int(max) { // in most cases
 			s.kcp.Send(b)
 			break
 		} else {
