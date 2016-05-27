@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/net/ipv4"
 )
 
@@ -621,7 +622,7 @@ func ListenEncrypted(mode Mode, fec int, laddr string, key []byte) (*Listener, e
 	l.die = make(chan struct{})
 	l.fec = fec
 	if key != nil && len(key) > 0 {
-		pass := pbkdf2(key, []byte(salt), 4096, 32, sha1.New)
+		pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
 		if block, err := aes.NewCipher(pass[:]); err == nil {
 			l.block = block
 		} else {
@@ -657,7 +658,7 @@ func DialEncrypted(mode Mode, fec int, raddr string, key []byte) (*UDPSession, e
 		port := basePort + rand.Int()%(maxPort-basePort)
 		if udpconn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port}); err == nil {
 			if key != nil && len(key) > 0 {
-				pass := pbkdf2(key, []byte(salt), 4096, 32, sha1.New)
+				pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
 					return newUDPSession(rand.Uint32(), fec, mode, nil, udpconn, udpaddr, block), nil
 				} else {
