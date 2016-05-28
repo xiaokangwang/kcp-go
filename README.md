@@ -15,7 +15,7 @@ A port of [KCP](https://github.com/skywind3000/kcp) in [golang](https://golang.o
 # Features
 1. 100% compatible with original [skywind3000's](https://github.com/skywind3000) C version.
 2. Pure golang implementation of KCP in a ***single file***  [kcp.go](https://github.com/xtaci/kcp-go/blob/master/kcp.go).
-2. Instead of container.List, kcp-go made use of *** cache friendly*** slice based internal queue.
+2. Instead of container.List, kcp-go made use of ***cache friendly*** slice based internal queue.
 3. Provides a basic [session manager](https://github.com/xtaci/kcp-go/blob/master/sess.go), compatible with [net.Conn](https://golang.org/pkg/net/#Conn) and [net.Listener](https://golang.org/pkg/net/#Listener).
 4. Indepedent KCP code and session manager code, you can copy kcp.go to your project without session manager.
 5. Support [FEC(Forward Error Correction)](https://en.wikipedia.org/wiki/Forward_error_correction)
