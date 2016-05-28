@@ -10,22 +10,22 @@
 [7]: https://coveralls.io/repos/github/xtaci/kcp-go/badge.svg?branch=master
 [8]: https://coveralls.io/github/xtaci/kcp-go?branch=master
 
-A port of [KCP](https://github.com/skywind3000/kcp) by [skywind3000](https://github.com/skywind3000) in [golang](https://golang.org/)
+A port of [KCP](https://github.com/skywind3000/kcp) in [golang](https://golang.org/) 
 
 # Features
-1. 100% compatible with original C version.
-2. Pure golang implementation of KCP in a single file [kcp.go](https://github.com/xtaci/kcp-go/blob/master/kcp.go).
-2. Instead of container.List, kcp-go made use of slice based internal queue. 
+1. 100% compatible with original [skywind3000's](https://github.com/skywind3000) C version.
+2. Pure golang implementation of KCP in a ***single file***  [kcp.go](https://github.com/xtaci/kcp-go/blob/master/kcp.go).
+2. Instead of container.List, kcp-go made use of *** cache friendly*** slice based internal queue.
 3. Provides a basic [session manager](https://github.com/xtaci/kcp-go/blob/master/sess.go), compatible with [net.Conn](https://golang.org/pkg/net/#Conn) and [net.Listener](https://golang.org/pkg/net/#Listener).
 4. Indepedent KCP code and session manager code, you can copy kcp.go to your project without session manager.
-5. Support FEC(Forward Error Correction)
-
+5. Support [FEC(Forward Error Correction)](https://en.wikipedia.org/wiki/Forward_error_correction)
+6. Support packet level encryption with [AES](https://en.wikipedia.org/wiki/Advanced_Encryption_Standard)
 
 # Conventions
-1. use UDP for packet delivery.
-2. ```conv uint32``` in session manager is a random number initiated by client.
-3. conn.Write never blocks in KCP, so conn.SetWriteDeadline has no use.
-4. KCP doesn't define control messages like SYN/FIN/RST in TCP, a real world example is to use TCP & KCP at the same time, of which TCP does session control(eg. UDP disconnecting.), and UDP does message delivery.
+1. [UDP](https://en.wikipedia.org/wiki/User_Datagram_Protocol)  for packet delivery.
+2. ```conv uint32``` in session manager is a ***random number*** initiated by client.
+3. conn.Write ***never blocks*** in KCP, so conn.SetWriteDeadline has no use.
+4. KCP doesn't define control messages like SYN/ACK/FIN/RST in TCP, a real world example is to use some ***multiplexing*** protocol over session, such as [yamux](https://github.com/hashicorp/yamux)
 
 # Performance
 ```
