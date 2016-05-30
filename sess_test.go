@@ -130,29 +130,31 @@ func client3(wg *sync.WaitGroup) {
 	if err != nil {
 		panic(err)
 	}
+
+	go func() {
+		buf := make([]byte, 1024*1024)
+		nrecv := 0
+		for {
+			n, err := cli.Read(buf)
+			if err != nil {
+				fmt.Println(err)
+				break
+			} else {
+				nrecv += n
+				if nrecv == 4096*4096 {
+					break
+				}
+			}
+		}
+		println("total recv:", nrecv)
+		cli.Close()
+		wg.Done()
+	}()
 	msg := make([]byte, 4096)
-	buf := make([]byte, 1024*1024)
 	cli.SetWindowSize(1024, 1024)
 	for i := 0; i < 4096; i++ {
 		cli.Write(msg)
 	}
-	nrecv := 0
-	for {
-		n, err := cli.Read(buf)
-		if err != nil {
-			fmt.Println(err)
-			break
-		} else {
-			nrecv += n
-			if nrecv == 4096*4096 {
-				break
-			}
-		}
-	}
-
-	println("total recv:", nrecv)
-	cli.Close()
-	wg.Done()
 }
 
 func TestParallel(t *testing.T) {

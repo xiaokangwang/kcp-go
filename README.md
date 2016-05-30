@@ -24,8 +24,7 @@ A port of [KCP](https://github.com/skywind3000/kcp) in [golang](https://golang.o
 # Conventions
 1. [UDP](https://en.wikipedia.org/wiki/User_Datagram_Protocol)  for packet delivery.
 2. ```conv uint32``` in session manager is a ***random number*** initiated by client.
-3. conn.Write ***never blocks*** in KCP, so conn.SetWriteDeadline has no use.
-4. KCP doesn't define control messages like SYN/ACK/FIN/RST in TCP, a real world example is to use some ***multiplexing*** protocol over session, such as [yamux](https://github.com/hashicorp/yamux)
+3. KCP doesn't define control messages like SYN/ACK/FIN/RST in TCP, a real world example is to use some ***multiplexing*** protocol over session, such as [yamux](https://github.com/hashicorp/yamux)
 
 # Performance
 ```
