@@ -44,6 +44,7 @@ const (
 	crcSize         = 4             // 4bytes packet checksum
 	cryptHeaderSize = otpSize + crcSize
 	connTimeout     = 60 * time.Second
+	mtuLimit        = 4096
 )
 
 type (
@@ -317,10 +318,18 @@ func (s *UDPSession) SetDSCP(tos int) {
 
 func (s *UDPSession) outputTask() {
 	encbuf := make([]byte, aes.BlockSize)
-	var fec_group [][]byte
 	fecOffset := 0
 	if s.block != nil {
 		fecOffset = cryptHeaderSize
+	}
+	var fec_group [][]byte
+	var fec_cnt int
+	if s.fec != nil {
+		// fec group buffer
+		fec_group = make([][]byte, s.fec.cluster)
+		for i := 0; i < len(fec_group); i++ {
+			fec_group[i] = make([]byte, mtuLimit)
+		}
 	}
 
 	// ping
@@ -336,15 +345,15 @@ func (s *UDPSession) outputTask() {
 				binary.LittleEndian.PutUint16(ext[fecOffset+fecHeaderSize:], uint16(len(ext[fecOffset+fecHeaderSize:])))
 
 				// copy data to fec group
-				extcopy := make([]byte, len(ext))
-				copy(extcopy, ext)
-				fec_group = append(fec_group, extcopy)
+				copy(fec_group[fec_cnt], ext)
+				fec_group[fec_cnt] = fec_group[fec_cnt][:len(ext)]
+				fec_cnt++
 
 				// cacluation of ecc
-				if len(fec_group) == s.fec.cluster {
+				if fec_cnt == s.fec.cluster {
 					ecc = s.fec.calcECC(fec_group)
 					s.fec.markFEC(ecc[fecOffset:])
-					fec_group = nil
+					fec_cnt = 0
 				}
 			}
 
@@ -486,7 +495,7 @@ func (s *UDPSession) kcpInput(data []byte) {
 // read loop for client session
 func (s *UDPSession) readLoop() {
 	conn := s.conn
-	buffer := make([]byte, 4096)
+	buffer := make([]byte, mtuLimit)
 	decbuf := make([]byte, 2*aes.BlockSize)
 	for {
 		if n, err := conn.Read(buffer); err == nil && n >= s.headerSize+IKCP_OVERHEAD {
@@ -603,7 +612,7 @@ func (l *Listener) monitor() {
 
 func (l *Listener) receiver(ch chan packet) {
 	for {
-		data := make([]byte, 4096)
+		data := make([]byte, mtuLimit)
 		if n, from, err := l.conn.ReadFromUDP(data); err == nil && n >= l.headerSize+IKCP_OVERHEAD {
 			ch <- packet{from, data[:n]}
 		} else if err != nil {
