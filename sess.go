@@ -345,7 +345,7 @@ func (s *UDPSession) outputTask() {
 				binary.LittleEndian.PutUint16(ext[fecOffset+fecHeaderSize:], uint16(len(ext[fecOffset+fecHeaderSize:])))
 
 				// copy data to fec group
-				copy(fec_group[fec_cnt], ext)
+				copy(fec_group[fec_cnt][:mtuLimit], ext)
 				fec_group[fec_cnt] = fec_group[fec_cnt][:len(ext)]
 				fec_cnt++
 
