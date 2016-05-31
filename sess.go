@@ -276,7 +276,7 @@ func (s *UDPSession) SetACKNoDelay(nodelay bool) {
 	s.ackNoDelay = nodelay
 }
 
-// SeNoDelay calls nodelay() of kcp
+// SetNoDelay calls nodelay() of kcp
 func (s *UDPSession) SetNoDelay(nodelay, interval, resend, nc int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
