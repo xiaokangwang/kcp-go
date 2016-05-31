@@ -26,16 +26,6 @@ var (
 	salt          = "kcp-go"
 )
 
-// Mode specifies the working mode of kcp
-type Mode int
-
-const (
-	MODE_DEFAULT Mode = iota
-	MODE_NORMAL
-	MODE_FAST
-	MODE_FAST2
-)
-
 const (
 	basePort        = 20000         // minimum port for listening
 	maxPort         = 65535         // maximum port for listening
@@ -74,7 +64,7 @@ type (
 )
 
 // newUDPSession create a new udp session for client or server
-func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
+func newUDPSession(conv uint32, fec int, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
 	sess := new(UDPSession)
 	sess.chTicker = make(chan time.Time, 1)
 	sess.chUDPOutput = make(chan []byte, defaultWndSize)
@@ -108,17 +98,6 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 	})
 	sess.kcp.WndSize(defaultWndSize, defaultWndSize)
 	sess.kcp.SetMtu(IKCP_MTU_DEF - sess.headerSize)
-
-	switch mode {
-	case MODE_FAST2:
-		sess.kcp.NoDelay(1, 20, 2, 1)
-	case MODE_FAST:
-		sess.kcp.NoDelay(0, 20, 2, 1)
-	case MODE_NORMAL:
-		sess.kcp.NoDelay(0, 30, 2, 1)
-	default:
-		sess.kcp.NoDelay(0, 30, 2, 0)
-	}
 
 	go sess.updateTask()
 	go sess.outputTask()
@@ -290,21 +269,18 @@ func (s *UDPSession) SetMtu(mtu int) {
 	s.kcp.SetMtu(mtu - s.headerSize)
 }
 
-// SetRetries influences the timeout of an alive KCP connection,
-// when RTO retransmissions remain unacknowledged.
-// default is 10, the total timeout is calculated as:
-// (1+1.5+...+5.5) * 200ms = 200ms * 10 * (2*1 +(10-1)*0.5)/2 = 6.5s
-func (s *UDPSession) SetRetries(n int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.kcp.dead_link = uint32(n)
-}
-
 // SetACKNoDelay changes ack flush option, set true to flush ack immediately,
 func (s *UDPSession) SetACKNoDelay(nodelay bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ackNoDelay = nodelay
+}
+
+// SeNoDelay calls nodelay() of kcp
+func (s *UDPSession) SetNoDelay(nodelay, interval, resend, nc int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.kcp.NoDelay(nodelay, interval, resend, nc)
 }
 
 // SetDSCP sets the DSCP field of IP header
@@ -528,7 +504,6 @@ type (
 		block       cipher.Block
 		fec         int
 		conn        *net.UDPConn
-		mode        Mode
 		sessions    map[string]*UDPSession
 		chAccepts   chan *UDPSession
 		chDeadlinks chan net.Addr
@@ -585,7 +560,7 @@ func (l *Listener) monitor() {
 					}
 
 					if convValid {
-						s := newUDPSession(conv, l.fec, l.mode, l, l.conn, from, l.block)
+						s := newUDPSession(conv, l.fec, l, l.conn, from, l.block)
 						s.kcpInput(data)
 						l.sessions[addr] = s
 						l.chAccepts <- s
@@ -647,14 +622,13 @@ func (l *Listener) Addr() net.Addr {
 }
 
 // Listen listens for incoming KCP packets addressed to the local address laddr on the network "udp",
-// mode must be one of: MODE_DEFAULT,MODE_NORMAL,MODE_FAST
-func Listen(mode Mode, laddr string) (*Listener, error) {
-	return ListenWithOptions(mode, 0, laddr, nil)
+func Listen(laddr string) (*Listener, error) {
+	return ListenWithOptions(0, laddr, nil)
 }
 
 // ListenWithOptions listens for incoming KCP packets addressed to the local address laddr on the network "udp" with packet encryption,
-// mode must be one of: MODE_DEFAULT,MODE_NORMAL,MODE_FAST; FEC = 0 means no FEC, FEC > 0 means num(FEC) as a FEC cluster
-func ListenWithOptions(mode Mode, fec int, laddr string, key []byte) (*Listener, error) {
+// FEC = 0 means no FEC, FEC > 0 means num(FEC) as a FEC cluster
+func ListenWithOptions(fec int, laddr string, key []byte) (*Listener, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", laddr)
 	if err != nil {
 		return nil, err
@@ -666,7 +640,6 @@ func ListenWithOptions(mode Mode, fec int, laddr string, key []byte) (*Listener,
 
 	l := new(Listener)
 	l.conn = conn
-	l.mode = mode
 	l.sessions = make(map[string]*UDPSession)
 	l.chAccepts = make(chan *UDPSession, 1024)
 	l.chDeadlinks = make(chan net.Addr, 1024)
@@ -693,13 +666,13 @@ func ListenWithOptions(mode Mode, fec int, laddr string, key []byte) (*Listener,
 	return l, nil
 }
 
-// Dial connects to the remote address raddr on the network "udp", mode is same as Listen
-func Dial(mode Mode, raddr string) (*UDPSession, error) {
-	return DialWithOptions(mode, 0, raddr, nil)
+// Dial connects to the remote address raddr on the network "udp"
+func Dial(raddr string) (*UDPSession, error) {
+	return DialWithOptions(0, raddr, nil)
 }
 
-// DialWithOptions connects to the remote address raddr on the network "udp" with packet encryption, mode is same as Listen
-func DialWithOptions(mode Mode, fec int, raddr string, key []byte) (*UDPSession, error) {
+// DialWithOptions connects to the remote address raddr on the network "udp" with packet encryption
+func DialWithOptions(fec int, raddr string, key []byte) (*UDPSession, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", raddr)
 	if err != nil {
 		return nil, err
@@ -711,12 +684,12 @@ func DialWithOptions(mode Mode, fec int, raddr string, key []byte) (*UDPSession,
 			if key != nil && len(key) > 0 {
 				pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
 				if block, err := aes.NewCipher(pass[:]); err == nil {
-					return newUDPSession(rand.Uint32(), fec, mode, nil, udpconn, udpaddr, block), nil
+					return newUDPSession(rand.Uint32(), fec, nil, udpconn, udpaddr, block), nil
 				} else {
 					log.Println(err)
 				}
 			}
-			return newUDPSession(rand.Uint32(), fec, mode, nil, udpconn, udpaddr, nil), nil
+			return newUDPSession(rand.Uint32(), fec, nil, udpconn, udpaddr, nil), nil
 		}
 	}
 }

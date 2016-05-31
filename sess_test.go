@@ -13,7 +13,7 @@ var key = []byte("testkey")
 var fec = 4
 
 func server() {
-	l, err := ListenWithOptions(MODE_FAST, fec, port, key)
+	l, err := ListenWithOptions(fec, port, key)
 	if err != nil {
 		panic(err)
 	}
@@ -33,6 +33,7 @@ func init() {
 
 func handle_client(conn *UDPSession) {
 	conn.SetWindowSize(1024, 1024)
+	conn.SetNoDelay(0, 20, 2, 1)
 	fmt.Println("new client", conn.RemoteAddr())
 	buf := make([]byte, 65536)
 	count := 0
@@ -57,10 +58,11 @@ func TestSendRecv(t *testing.T) {
 }
 
 func client(wg *sync.WaitGroup) {
-	cli, err := DialWithOptions(MODE_FAST, fec, port, key)
+	cli, err := DialWithOptions(fec, port, key)
 	if err != nil {
 		panic(err)
 	}
+	cli.SetNoDelay(0, 20, 2, 1)
 	const N = 100
 	buf := make([]byte, 10)
 	for i := 0; i < N; i++ {
@@ -85,10 +87,11 @@ func TestBigPacket(t *testing.T) {
 }
 
 func client2(wg *sync.WaitGroup) {
-	cli, err := DialWithOptions(MODE_FAST, fec, port, key)
+	cli, err := DialWithOptions(fec, port, key)
 	if err != nil {
 		panic(err)
 	}
+	cli.SetNoDelay(0, 20, 2, 1)
 	const N = 10
 	buf := make([]byte, 1024*512)
 	msg := make([]byte, 1024*512)
@@ -126,10 +129,11 @@ func TestSpeed(t *testing.T) {
 }
 
 func client3(wg *sync.WaitGroup) {
-	cli, err := DialWithOptions(MODE_FAST, fec, port, key)
+	cli, err := DialWithOptions(fec, port, key)
 	if err != nil {
 		panic(err)
 	}
+	cli.SetNoDelay(0, 20, 2, 1)
 
 	go func() {
 		buf := make([]byte, 1024*1024)
@@ -169,11 +173,12 @@ func TestParallel(t *testing.T) {
 }
 
 func client4(wg *sync.WaitGroup) {
-	cli, err := DialWithOptions(MODE_FAST, fec, port, key)
+	cli, err := DialWithOptions(fec, port, key)
 	if err != nil {
 		panic(err)
 	}
 	const N = 100
+	cli.SetNoDelay(0, 20, 2, 1)
 	buf := make([]byte, 10)
 	for i := 0; i < N; i++ {
 		msg := fmt.Sprintf("hello%v", i)
