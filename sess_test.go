@@ -13,7 +13,7 @@ var key = []byte("testkey")
 var fec = 4
 
 func server() {
-	l, err := ListenEncrypted(MODE_FAST, fec, port, key)
+	l, err := ListenWithOptions(MODE_FAST, fec, port, key)
 	if err != nil {
 		panic(err)
 	}
@@ -57,7 +57,7 @@ func TestSendRecv(t *testing.T) {
 }
 
 func client(wg *sync.WaitGroup) {
-	cli, err := DialEncrypted(MODE_FAST, fec, port, key)
+	cli, err := DialWithOptions(MODE_FAST, fec, port, key)
 	if err != nil {
 		panic(err)
 	}
@@ -85,7 +85,7 @@ func TestBigPacket(t *testing.T) {
 }
 
 func client2(wg *sync.WaitGroup) {
-	cli, err := DialEncrypted(MODE_FAST, fec, port, key)
+	cli, err := DialWithOptions(MODE_FAST, fec, port, key)
 	if err != nil {
 		panic(err)
 	}
@@ -126,7 +126,7 @@ func TestSpeed(t *testing.T) {
 }
 
 func client3(wg *sync.WaitGroup) {
-	cli, err := DialEncrypted(MODE_FAST, fec, port, key)
+	cli, err := DialWithOptions(MODE_FAST, fec, port, key)
 	if err != nil {
 		panic(err)
 	}
@@ -169,7 +169,7 @@ func TestParallel(t *testing.T) {
 }
 
 func client4(wg *sync.WaitGroup) {
-	cli, err := DialEncrypted(MODE_FAST, fec, port, key)
+	cli, err := DialWithOptions(MODE_FAST, fec, port, key)
 	if err != nil {
 		panic(err)
 	}
