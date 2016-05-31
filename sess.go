@@ -473,7 +473,7 @@ func (s *UDPSession) kcpInput(data []byte) {
 		if f.flag == typeData || f.flag == typeFEC {
 			if ecc := s.fec.input(f); ecc != nil {
 				sz := binary.LittleEndian.Uint16(ecc)
-				if int(sz) <= len(ecc) {
+				if int(sz) <= len(ecc) && sz >= 2 {
 					s.kcp.Input(ecc[2:sz])
 				}
 			}
