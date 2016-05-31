@@ -111,13 +111,13 @@ func newUDPSession(conv uint32, fec int, mode Mode, l *Listener, conn *net.UDPCo
 
 	switch mode {
 	case MODE_FAST2:
-		sess.kcp.NoDelay(1, 10, 2, 1)
-	case MODE_FAST:
 		sess.kcp.NoDelay(1, 20, 2, 1)
-	case MODE_NORMAL:
+	case MODE_FAST:
 		sess.kcp.NoDelay(0, 20, 2, 1)
+	case MODE_NORMAL:
+		sess.kcp.NoDelay(0, 30, 2, 1)
 	default:
-		sess.kcp.NoDelay(0, 20, 2, 0)
+		sess.kcp.NoDelay(0, 30, 2, 0)
 	}
 
 	go sess.updateTask()
