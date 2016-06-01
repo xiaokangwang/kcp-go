@@ -669,6 +669,7 @@ func (kcp *KCP) flush() {
 			segment.resendts = current + segment.rto
 			change++
 			atomic.AddUint64(&DefaultSnmp.RetransSegs, 1)
+			atomic.AddUint64(&DefaultSnmp.FastRetransSegs, 1)
 		}
 
 		if needsend {
