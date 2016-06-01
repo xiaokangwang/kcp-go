@@ -126,6 +126,7 @@ func TestSpeed(t *testing.T) {
 	go client3(&wg)
 	wg.Wait()
 	fmt.Println("time for 16MB rtt with encryption", time.Now().Sub(start))
+	fmt.Printf("%+v\n", DefaultSnmp.Copy())
 }
 
 func client3(wg *sync.WaitGroup) {

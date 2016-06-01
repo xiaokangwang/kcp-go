@@ -111,7 +111,11 @@ func newUDPSession(conv uint32, fec int, l *Listener, conn *net.UDPConn, remote 
 	} else {
 		atomic.AddUint64(&DefaultSnmp.PassiveOpens, 1)
 	}
-	atomic.AddUint64(&DefaultSnmp.CurrEstab, 1)
+	currestab := atomic.AddUint64(&DefaultSnmp.CurrEstab, 1)
+	maxconn := atomic.LoadUint64(&DefaultSnmp.MaxConn)
+	if currestab > maxconn {
+		atomic.CompareAndSwapUint64(&DefaultSnmp.MaxConn, maxconn, currestab)
+	}
 
 	return sess
 }

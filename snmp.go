@@ -24,7 +24,7 @@ func newSnmp() *Snmp {
 	return new(Snmp)
 }
 
-func (s *Snmp) Get() *Snmp {
+func (s *Snmp) Copy() *Snmp {
 	d := newSnmp()
 	d.BytesSent = atomic.LoadUint64(&s.BytesSent)
 	d.BytesReceived = atomic.LoadUint64(&s.BytesReceived)
