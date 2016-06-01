@@ -36,6 +36,7 @@ const (
 	cryptHeaderSize = otpSize + crcSize
 	connTimeout     = 60 * time.Second
 	mtuLimit        = 4096
+	rxQueueLimit    = 4096
 )
 
 type (
@@ -68,7 +69,7 @@ type (
 func newUDPSession(conv uint32, fec int, l *Listener, conn *net.UDPConn, remote *net.UDPAddr, block cipher.Block) *UDPSession {
 	sess := new(UDPSession)
 	sess.chTicker = make(chan time.Time, 1)
-	sess.chUDPOutput = make(chan []byte, defaultWndSize)
+	sess.chUDPOutput = make(chan []byte, rxQueueLimit)
 	sess.die = make(chan struct{})
 	sess.local = conn.LocalAddr()
 	sess.chReadEvent = make(chan struct{}, 1)
@@ -497,15 +498,29 @@ func (s *UDPSession) kcpInput(data []byte) {
 	s.notifyReadEvent()
 }
 
+func (s *UDPSession) receiver(ch chan []byte) {
+	for {
+		data := make([]byte, mtuLimit)
+		if n, _, err := s.conn.ReadFromUDP(data); err == nil && n >= s.headerSize+IKCP_OVERHEAD {
+			ch <- data[:n]
+		} else if err != nil {
+			return
+		} else {
+			atomic.AddUint64(&DefaultSnmp.InErrs, 1)
+		}
+	}
+}
+
 // read loop for client session
 func (s *UDPSession) readLoop() {
-	conn := s.conn
-	buffer := make([]byte, mtuLimit)
 	decbuf := make([]byte, 2*aes.BlockSize)
+	chPacket := make(chan []byte, rxQueueLimit)
+	go s.receiver(chPacket)
+
 	for {
-		if n, err := conn.Read(buffer); err == nil && n >= s.headerSize+IKCP_OVERHEAD {
+		select {
+		case data := <-chPacket:
 			dataValid := false
-			data := buffer[:n]
 			if s.block != nil {
 				decrypt(s.block, data, decbuf)
 				data = data[otpSize:]
@@ -523,10 +538,8 @@ func (s *UDPSession) readLoop() {
 			if dataValid {
 				s.kcpInput(data)
 			}
-		} else if err != nil {
+		case <-s.die:
 			return
-		} else {
-			atomic.AddUint64(&DefaultSnmp.InErrs, 1)
 		}
 	}
 }
@@ -552,7 +565,7 @@ type (
 
 // monitor incoming data for all connections of server
 func (l *Listener) monitor() {
-	chPacket := make(chan packet, 1024)
+	chPacket := make(chan packet, rxQueueLimit)
 	decbuf := make([]byte, 2*aes.BlockSize)
 	go l.receiver(chPacket)
 	ticker := time.NewTicker(10 * time.Millisecond)
