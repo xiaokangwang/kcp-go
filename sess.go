@@ -36,7 +36,8 @@ const (
 	cryptHeaderSize = otpSize + crcSize
 	connTimeout     = 60 * time.Second
 	mtuLimit        = 4096
-	rxQueueLimit    = 4096
+	rxQueueLimit    = 8192
+	rxFecLimit      = 2048
 )
 
 type (
@@ -80,7 +81,7 @@ func newUDPSession(conv uint32, fec int, l *Listener, conn *net.UDPConn, remote 
 	sess.block = block
 	sess.lastInputTs = time.Now()
 	if fec > 0 {
-		sess.fec = newFEC(fec, 128)
+		sess.fec = newFEC(fec, rxFecLimit)
 	}
 
 	// caculate header size
