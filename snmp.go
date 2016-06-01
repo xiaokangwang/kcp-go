@@ -43,6 +43,9 @@ func (s *Snmp) Copy() *Snmp {
 	d.RetransSegs = atomic.LoadUint64(&s.RetransSegs)
 	d.LostSegs = atomic.LoadUint64(&s.LostSegs)
 	d.RepeatSegs = atomic.LoadUint64(&s.RepeatSegs)
+	d.FECSegs = atomic.LoadUint64(&s.FECSegs)
+	d.FECErrs = atomic.LoadUint64(&s.FECErrs)
+	d.FECRecovered = atomic.LoadUint64(&s.FECRecovered)
 	return d
 }
 
