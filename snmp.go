@@ -4,6 +4,8 @@ import "sync/atomic"
 
 // Snmp defines network statistics indicator
 type Snmp struct {
+	BytesSent     uint64
+	BytesReceived uint64
 	MaxConn       uint64
 	ActiveOpens   uint64
 	PassiveOpens  uint64
@@ -12,10 +14,10 @@ type Snmp struct {
 	InCsumErrors  uint64
 	InSegs        uint64
 	OutSegs       uint64
+	OutBytes      uint64
 	RetransSegs   uint64
-	BytesSent     uint64
-	BytesReceived uint64
-	OutputBytes   uint64
+	LostSegs      uint64
+	RepeatSegs    uint64
 }
 
 func newSnmp() *Snmp {
@@ -24,6 +26,8 @@ func newSnmp() *Snmp {
 
 func (s *Snmp) Get() *Snmp {
 	d := newSnmp()
+	d.BytesSent = atomic.LoadUint64(&s.BytesSent)
+	d.BytesReceived = atomic.LoadUint64(&s.BytesReceived)
 	d.MaxConn = atomic.LoadUint64(&s.MaxConn)
 	d.ActiveOpens = atomic.LoadUint64(&s.ActiveOpens)
 	d.PassiveOpens = atomic.LoadUint64(&s.PassiveOpens)
@@ -32,9 +36,15 @@ func (s *Snmp) Get() *Snmp {
 	d.InCsumErrors = atomic.LoadUint64(&s.InCsumErrors)
 	d.InSegs = atomic.LoadUint64(&s.InSegs)
 	d.OutSegs = atomic.LoadUint64(&s.OutSegs)
+	d.OutBytes = atomic.LoadUint64(&s.OutBytes)
 	d.RetransSegs = atomic.LoadUint64(&s.RetransSegs)
-	d.BytesSent = atomic.LoadUint64(&s.BytesSent)
-	d.BytesReceived = atomic.LoadUint64(&s.BytesReceived)
-	d.OutputBytes = atomic.LoadUint64(&s.OutputBytes)
+	d.LostSegs = atomic.LoadUint64(&s.LostSegs)
+	d.RepeatSegs = atomic.LoadUint64(&s.RepeatSegs)
 	return d
+}
+
+var DefaultSnmp *Snmp
+
+func init() {
+	DefaultSnmp = newSnmp()
 }

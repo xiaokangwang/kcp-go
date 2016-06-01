@@ -1,7 +1,10 @@
 // Package kcp - A Fast and Reliable ARQ Protocol
 package kcp
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"sync/atomic"
+)
 
 const (
 	IKCP_RTO_NDL     = 30  // no delay min rto
@@ -373,6 +376,7 @@ func (kcp *KCP) parse_data(newseg *Segment) {
 		seg := &kcp.rcv_buf[i]
 		if seg.sn == sn {
 			repeat = true
+			atomic.AddUint64(&DefaultSnmp.RepeatSegs, 1)
 			break
 		}
 		if _itimediff(sn, seg.sn) > 0 {
@@ -656,12 +660,15 @@ func (kcp *KCP) flush() {
 			}
 			segment.resendts = current + segment.rto
 			lost = true
+			atomic.AddUint64(&DefaultSnmp.RetransSegs, 1)
+			atomic.AddUint64(&DefaultSnmp.LostSegs, 1)
 		} else if segment.fastack >= resent {
 			needsend = true
 			segment.xmit++
 			segment.fastack = 0
 			segment.resendts = current + segment.rto
 			change++
+			atomic.AddUint64(&DefaultSnmp.RetransSegs, 1)
 		}
 
 		if needsend {

@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/pbkdf2"
@@ -104,6 +105,14 @@ func newUDPSession(conv uint32, fec int, l *Listener, conn *net.UDPConn, remote 
 	if l == nil { // it's a client connection
 		go sess.readLoop()
 	}
+
+	if l == nil {
+		atomic.AddUint64(&DefaultSnmp.ActiveOpens, 1)
+	} else {
+		atomic.AddUint64(&DefaultSnmp.PassiveOpens, 1)
+	}
+	atomic.AddUint64(&DefaultSnmp.CurrEstab, 1)
+
 	return sess
 }
 
@@ -140,6 +149,7 @@ func (s *UDPSession) Read(b []byte) (n int, err error) {
 				s.sockbuff = buf[n:] // store remaining bytes into sockbuff for next read
 			}
 			s.mu.Unlock()
+			atomic.AddUint64(&DefaultSnmp.BytesReceived, uint64(n))
 			return n, nil
 		}
 
@@ -189,6 +199,7 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 			s.kcp.current = currentMs()
 			s.kcp.flush()
 			s.mu.Unlock()
+			atomic.AddUint64(&DefaultSnmp.BytesSent, uint64(n))
 			return n, nil
 		}
 
@@ -219,6 +230,8 @@ func (s *UDPSession) Close() error {
 	if s.l == nil { // client socket close
 		s.conn.Close()
 	}
+
+	atomic.AddUint64(&DefaultSnmp.CurrEstab, ^uint64(0))
 	return nil
 }
 
@@ -352,6 +365,8 @@ func (s *UDPSession) outputTask() {
 			if err != nil {
 				log.Println(err, n)
 			}
+			atomic.AddUint64(&DefaultSnmp.OutSegs, 1)
+			atomic.AddUint64(&DefaultSnmp.OutBytes, uint64(n))
 			//}
 
 			if ecc != nil {
@@ -359,6 +374,8 @@ func (s *UDPSession) outputTask() {
 				if err != nil {
 					log.Println(err, n)
 				}
+				atomic.AddUint64(&DefaultSnmp.OutSegs, 1)
+				atomic.AddUint64(&DefaultSnmp.OutBytes, uint64(n))
 			}
 		case <-ticker.C:
 			ping := make([]byte, s.headerSize+IKCP_OVERHEAD)
@@ -432,6 +449,7 @@ func (s *UDPSession) notifyWriteEvent() {
 }
 
 func (s *UDPSession) kcpInput(data []byte) {
+	atomic.AddUint64(&DefaultSnmp.InSegs, 1)
 	now := time.Now()
 	if now.Sub(s.lastInputTs) > connTimeout {
 		s.Close()
@@ -484,6 +502,8 @@ func (s *UDPSession) readLoop() {
 				if checksum == binary.LittleEndian.Uint32(data) {
 					data = data[crcSize:]
 					dataValid = true
+				} else {
+					atomic.AddUint64(&DefaultSnmp.InCsumErrors, 1)
 				}
 			} else if s.block == nil {
 				dataValid = true
@@ -494,6 +514,8 @@ func (s *UDPSession) readLoop() {
 			}
 		} else if err != nil {
 			return
+		} else {
+			atomic.AddUint64(&DefaultSnmp.InErrs, 1)
 		}
 	}
 }
@@ -537,6 +559,8 @@ func (l *Listener) monitor() {
 				if checksum == binary.LittleEndian.Uint32(data) {
 					data = data[crcSize:]
 					dataValid = true
+				} else {
+					atomic.AddUint64(&DefaultSnmp.InCsumErrors, 1)
 				}
 			} else if l.block == nil {
 				dataValid = true
@@ -592,6 +616,8 @@ func (l *Listener) receiver(ch chan packet) {
 			ch <- packet{from, data[:n]}
 		} else if err != nil {
 			return
+		} else {
+			atomic.AddUint64(&DefaultSnmp.InErrs, 1)
 		}
 	}
 }
