@@ -18,6 +18,9 @@ type Snmp struct {
 	RetransSegs   uint64
 	LostSegs      uint64
 	RepeatSegs    uint64
+	FECRecovered  uint64
+	FECErrs       uint64
+	FECSegs       uint64
 }
 
 func newSnmp() *Snmp {

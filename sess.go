@@ -469,10 +469,17 @@ func (s *UDPSession) kcpInput(data []byte) {
 		}
 
 		if f.flag == typeData || f.flag == typeFEC {
+			if f.flag == typeFEC {
+				atomic.AddUint64(&DefaultSnmp.FECSegs, 1)
+			}
+
 			if ecc := s.fec.input(f); ecc != nil {
 				sz := binary.LittleEndian.Uint16(ecc)
 				if int(sz) <= len(ecc) && sz >= 2 {
 					s.kcp.Input(ecc[2:sz])
+					atomic.AddUint64(&DefaultSnmp.FECRecovered, 1)
+				} else {
+					atomic.AddUint64(&DefaultSnmp.FECErrs, 1)
 				}
 			}
 		}
