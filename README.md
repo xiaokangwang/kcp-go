@@ -39,10 +39,11 @@ A port of [KCP](https://github.com/skywind3000/kcp) in [golang](https://golang.o
   内存：	8 GB
 ```
 ```
-$ go test -run TestSpeed
+$ go test -run Speed
 new client 127.0.0.1:61165
 total recv: 16777216
-time for 16MB rtt with encryption 815.842872ms
+time for 16MB rtt with encryption 570.41176ms
+&{BytesSent:33554432 BytesReceived:33554432 MaxConn:2 ActiveOpens:1 PassiveOpens:1 CurrEstab:1 InErrs:0 InCsumErrors:0 InSegs:42577 OutSegs:42641 OutBytes:48111336 RetransSegs:92 FastRetransSegs:92 LostSegs:0 RepeatSegs:0 FECRecovered:1 FECErrs:0 FECSegs:8514}
 PASS
-ok  	github.com/xtaci/kcp-go	0.831s
+ok  	github.com/xtaci/kcp-go	0.600s
 ```
