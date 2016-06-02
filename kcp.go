@@ -334,7 +334,7 @@ func (kcp *KCP) parse_ack(lastsn, sn uint32) {
 		if sn == seg.sn {
 			kcp.snd_buf = append(kcp.snd_buf[:k], kcp.snd_buf[k+1:]...)
 			break
-		} else if seg.sn > lastsn {
+		} else if seg.sn > lastsn && seg.sn < sn {
 			seg.fastack++
 		}
 	}
