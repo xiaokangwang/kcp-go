@@ -324,7 +324,7 @@ func (kcp *KCP) shrink_buf() {
 	}
 }
 
-func (kcp *KCP) parse_ack(lastsn, sn uint32) {
+func (kcp *KCP) parse_ack(firstsn, sn uint32) {
 	if _itimediff(sn, kcp.snd_una) < 0 || _itimediff(sn, kcp.snd_nxt) >= 0 {
 		return
 	}
@@ -334,9 +334,7 @@ func (kcp *KCP) parse_ack(lastsn, sn uint32) {
 		if sn == seg.sn {
 			kcp.snd_buf = append(kcp.snd_buf[:k], kcp.snd_buf[k+1:]...)
 			break
-		} else if seg.sn > sn {
-			break
-		} else if seg.sn > lastsn {
+		} else if seg.sn > firstsn {
 			seg.fastack++
 		}
 	}
@@ -426,7 +424,7 @@ func (kcp *KCP) Input(data []byte) int {
 		return -1
 	}
 
-	var lastsn uint32
+	var firstsn uint32
 	for {
 		var ts, sn, length, una, conv uint32
 		var wnd uint16
@@ -465,9 +463,9 @@ func (kcp *KCP) Input(data []byte) int {
 			if _itimediff(kcp.current, ts) >= 0 {
 				kcp.update_ack(_itimediff(kcp.current, ts))
 			}
-			kcp.parse_ack(lastsn, sn)
-			if sn > lastsn {
-				lastsn = sn
+			kcp.parse_ack(firstsn, sn)
+			if firstsn == 0 {
+				firstsn = sn
 			}
 			kcp.shrink_buf()
 		} else if cmd == IKCP_CMD_PUSH {
