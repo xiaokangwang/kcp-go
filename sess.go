@@ -466,10 +466,6 @@ func (s *UDPSession) kcpInput(data []byte) {
 	s.mu.Lock()
 	if s.fec != nil {
 		f := fecDecode(data)
-		if f.flag == typeData {
-			s.kcp.Input(f.data[2:]) // skip 2B size
-		}
-
 		if f.flag == typeData || f.flag == typeFEC {
 			if f.flag == typeFEC {
 				atomic.AddUint64(&DefaultSnmp.FECSegs, 1)
@@ -485,6 +481,10 @@ func (s *UDPSession) kcpInput(data []byte) {
 				}
 			}
 		}
+		if f.flag == typeData {
+			s.kcp.Input(data[fecHeaderSizePlus2:])
+		}
+
 	} else {
 		s.kcp.Input(data)
 	}
