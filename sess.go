@@ -384,7 +384,9 @@ func (s *UDPSession) outputTask() {
 				atomic.AddUint64(&DefaultSnmp.OutBytes, uint64(n))
 			}
 		case <-ticker.C:
-			ping := make([]byte, s.headerSize+IKCP_OVERHEAD)
+			sz := rand.Intn(IKCP_MTU_DEF - s.headerSize - IKCP_OVERHEAD)
+			sz += s.headerSize + IKCP_OVERHEAD
+			ping := make([]byte, sz)
 			if s.block != nil {
 				io.ReadFull(crand.Reader, ping[:otpSize]) // OTP
 				checksum := crc32.ChecksumIEEE(ping[cryptHeaderSize:])
