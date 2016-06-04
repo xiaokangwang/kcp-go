@@ -474,6 +474,7 @@ func (s *UDPSession) kcpInput(data []byte) {
 			if ecc := s.fec.input(f); ecc != nil {
 				sz := binary.LittleEndian.Uint16(ecc)
 				if int(sz) <= len(ecc) && sz >= 2 {
+					s.kcp.current = currentMs()
 					s.kcp.Input(ecc[2:sz])
 					atomic.AddUint64(&DefaultSnmp.FECRecovered, 1)
 				} else {
@@ -482,10 +483,12 @@ func (s *UDPSession) kcpInput(data []byte) {
 			}
 		}
 		if f.flag == typeData {
+			s.kcp.current = currentMs()
 			s.kcp.Input(data[fecHeaderSizePlus2:])
 		}
 
 	} else {
+		s.kcp.current = currentMs()
 		s.kcp.Input(data)
 	}
 
