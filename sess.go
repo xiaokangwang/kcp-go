@@ -387,8 +387,8 @@ func (s *UDPSession) outputTask() {
 			sz := rand.Intn(IKCP_MTU_DEF - s.headerSize - IKCP_OVERHEAD)
 			sz += s.headerSize + IKCP_OVERHEAD
 			ping := make([]byte, sz)
+			io.ReadFull(crand.Reader, ping)
 			if s.block != nil {
-				io.ReadFull(crand.Reader, ping[:otpSize]) // OTP
 				checksum := crc32.ChecksumIEEE(ping[cryptHeaderSize:])
 				binary.LittleEndian.PutUint32(ping[otpSize:], checksum)
 				encrypt(s.block, ping, encbuf)
