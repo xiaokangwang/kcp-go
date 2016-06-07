@@ -295,6 +295,7 @@ func (kcp *KCP) Send(buffer []byte) int {
 	return 0
 }
 
+// https://tools.ietf.org/html/rfc6298
 func (kcp *KCP) update_ack(rtt int32) {
 	var rto uint32 = 0
 	if kcp.rx_srtt == 0 {
