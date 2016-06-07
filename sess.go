@@ -170,6 +170,7 @@ func (s *UDPSession) Read(b []byte) (n int, err error) {
 		select {
 		case <-s.chReadEvent:
 		case <-timeout:
+		case <-s.die:
 		}
 	}
 }
@@ -220,6 +221,7 @@ func (s *UDPSession) Write(b []byte) (n int, err error) {
 		select {
 		case <-s.chWriteEvent:
 		case <-timeout:
+		case <-s.die:
 		}
 	}
 }
