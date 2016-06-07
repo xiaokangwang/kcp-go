@@ -2,18 +2,20 @@ package kcp
 
 import "encoding/binary"
 
+// lengths
 const (
-	HEADER_NONCE_LEN      = 16
-	HEADER_CRC32_LEN      = 4
-	HEADER_FRAME_TYPE_LEN = 2
-	HEADER_LENGTH_LEN     = 2
+	HLEN_NONCE      = 16
+	HLEN_CRC32      = 4
+	HLEN_FRAME_TYPE = 2
+	HLEN_DATASIZE   = 2
 )
 
+// offsets
 const (
-	HEADER_CRC32_OFFSET      = HEADER_NONCE_LEN
-	HEADER_FRAME_TYPE_OFFSET = HEADER_CRC32_OFFSET + HEADER_CRC32_LEN
-	HEADER_LENGTH_OFFSET     = HEADER_FRAME_TYPE_OFFSET + HEADER_FRAME_TYPE_LEN
-	HEADER_SEQID_OFFSET      = HEADER_LENGTH_OFFSET + HEADER_LENGTH_LEN
+	HOFF_CRC32      = HLEN_NONCE
+	HOFF_FRAME_TYPE = HOFF_CRC32 + HLEN_CRC32
+	HOFF_DATASIZE   = HOFF_FRAME_TYPE + HLEN_FRAME_TYPE
+	HOFF_SEQID      = HOFF_DATASIZE + HLEN_DATASIZE
 )
 
 type FrameType int
@@ -26,30 +28,30 @@ const (
 )
 
 func hdrSetNonce(header []byte, nonce []byte) {
-	copy(header[:HEADER_NONCE_LEN], nonce)
+	copy(header[:HLEN_NONCE], nonce)
 }
 
 func hdrSetCrc32(header []byte, crc32 uint32) {
-	binary.LittleEndian.PutUint32(header[HEADER_NONCE_LEN:], crc32)
+	binary.LittleEndian.PutUint32(header[HOFF_CRC32:], crc32)
 }
 
 func hdrSetFrameType(header []byte, typ FrameType) {
 	switch typ {
 	case FRAME_TYPE_DATA:
-		header[HEADER_FRAME_TYPE_OFFSET] |= 128
+		header[HOFF_FRAME_TYPE] |= 128
 	case FRAME_TYPE_FEC:
-		header[HEADER_FRAME_TYPE_OFFSET] |= 64
+		header[HOFF_FRAME_TYPE] |= 64
 	case FRAME_TYPE_PING:
-		header[HEADER_FRAME_TYPE_OFFSET] |= 32
+		header[HOFF_FRAME_TYPE] |= 32
 	case FRAME_TYPE_SNMP:
-		header[HEADER_FRAME_TYPE_OFFSET] |= 16
+		header[HOFF_FRAME_TYPE] |= 16
 	}
 }
 
-func hdrSetDataLength(header []byte, length uint16) {
-	binary.LittleEndian.PutUint16(header[HEADER_LENGTH_OFFSET:], length)
+func hdrSetSize(header []byte, size uint16) {
+	binary.LittleEndian.PutUint16(header[HOFF_DATASIZE:], size)
 }
 
 func hdrSetSeqId(header []byte, seqid uint32) {
-	binary.LittleEndian.PutUint32(header[HEADER_LENGTH_OFFSET:], seqid)
+	binary.LittleEndian.PutUint32(header[HOFF_DATASIZE:], seqid)
 }
