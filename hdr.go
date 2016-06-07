@@ -21,7 +21,8 @@ const (
 type FrameType int
 
 const (
-	FRAME_TYPE_DATA = FrameType(iota)
+	FRAME_TYPE_UNKNOWN = FrameType(iota)
+	FRAME_TYPE_DATA
 	FRAME_TYPE_FEC
 	FRAME_TYPE_PING
 	FRAME_TYPE_SNMP
@@ -31,8 +32,12 @@ func hdrSetNonce(header []byte, nonce []byte) {
 	copy(header[:HLEN_NONCE], nonce)
 }
 
-func hdrSetCrc32(header []byte, crc32 uint32) {
+func hdrSetCRC(header []byte, crc32 uint32) {
 	binary.LittleEndian.PutUint32(header[HOFF_CRC32:], crc32)
+}
+
+func hdrGetCRC(header []byte) uint32 {
+	return binary.LittleEndian.Uint32(header[HOFF_CRC32:])
 }
 
 func hdrSetFrameType(header []byte, typ FrameType) {
@@ -48,10 +53,38 @@ func hdrSetFrameType(header []byte, typ FrameType) {
 	}
 }
 
+func hdrGetFrameType(header []byte) FrameType {
+	if header[HOFF_FRAME_TYPE]&128 != 0 {
+		return FRAME_TYPE_DATA
+	}
+
+	if header[HOFF_FRAME_TYPE]&64 != 0 {
+		return FRAME_TYPE_FEC
+	}
+
+	if header[HOFF_FRAME_TYPE]&32 != 0 {
+		return FRAME_TYPE_PING
+	}
+
+	if header[HOFF_FRAME_TYPE]&16 != 0 {
+		return FRAME_TYPE_SNMP
+	}
+
+	return FRAME_TYPE_UNKNOWN
+}
+
 func hdrSetSize(header []byte, size uint16) {
 	binary.LittleEndian.PutUint16(header[HOFF_DATASIZE:], size)
 }
 
+func hdrGetSize(header []byte) uint16 {
+	return binary.LittleEndian.Uint16(header[HOFF_DATASIZE:])
+}
+
 func hdrSetSeqId(header []byte, seqid uint32) {
-	binary.LittleEndian.PutUint32(header[HOFF_DATASIZE:], seqid)
+	binary.LittleEndian.PutUint32(header[HOFF_SEQID:], seqid)
+}
+
+func hdrGetSeqId(header []byte) uint32 {
+	return binary.LittleEndian.Uint32(header[HOFF_SEQID:])
 }
