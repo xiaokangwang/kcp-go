@@ -6,16 +6,19 @@ import "encoding/binary"
 const (
 	HLEN_NONCE      = 16
 	HLEN_CRC32      = 4
+	HLEN_SEQID      = 4
 	HLEN_FRAME_TYPE = 2
 	HLEN_DATASIZE   = 2
+	HLEN            = HLEN_NONCE + HLEN_CRC32 + HLEN_FRAME_TYPE + HLEN_DATASIZE + HLEN_SEQID
 )
 
 // offsets
 const (
 	HOFF_CRC32      = HLEN_NONCE
-	HOFF_FRAME_TYPE = HOFF_CRC32 + HLEN_CRC32
+	HOFF_SEQID      = HOFF_CRC32 + HLEN_CRC32
+	HOFF_FRAME_TYPE = HOFF_SEQID + HLEN_SEQID
 	HOFF_DATASIZE   = HOFF_FRAME_TYPE + HLEN_FRAME_TYPE
-	HOFF_SEQID      = HOFF_DATASIZE + HLEN_DATASIZE
+	HOFF_DATA       = HOFF_DATASIZE + HLEN_DATASIZE
 )
 
 type FrameType int
@@ -41,6 +44,7 @@ func hdrGetCRC(header []byte) uint32 {
 }
 
 func hdrSetFrameType(header []byte, typ FrameType) {
+	header[HOFF_FRAME_TYPE] = 0
 	switch typ {
 	case FRAME_TYPE_DATA:
 		header[HOFF_FRAME_TYPE] |= 128
