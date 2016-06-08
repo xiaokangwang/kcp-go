@@ -731,6 +731,7 @@ func (kcp *KCP) flush() {
 	}
 
 	// update ssthresh
+	// rate halving, https://tools.ietf.org/html/rfc6937
 	if change != 0 {
 		inflight := kcp.snd_nxt - kcp.snd_una
 		kcp.ssthresh = inflight / 2
@@ -741,6 +742,7 @@ func (kcp *KCP) flush() {
 		kcp.incr = kcp.cwnd * kcp.mss
 	}
 
+	// congestion control, https://tools.ietf.org/html/rfc5681
 	if lost {
 		kcp.ssthresh = cwnd / 2
 		if kcp.ssthresh < IKCP_THRESH_MIN {
