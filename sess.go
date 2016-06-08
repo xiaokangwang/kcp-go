@@ -28,11 +28,11 @@ var (
 )
 
 const (
-	basePort        = 20000         // minimum port for listening
-	maxPort         = 65535         // maximum port for listening
-	defaultWndSize  = 128           // default window size, in packet
-	otpSize         = aes.BlockSize // magic number
-	crcSize         = 4             // 4bytes packet checksum
+	basePort        = 20000 // minimum port for listening
+	maxPort         = 65535 // maximum port for listening
+	defaultWndSize  = 128   // default window size, in packet
+	otpSize         = 16    // magic number
+	crcSize         = 4     // 4bytes packet checksum
 	cryptHeaderSize = otpSize + crcSize
 	connTimeout     = 60 * time.Second
 	mtuLimit        = 4096
@@ -314,10 +314,11 @@ func (s *UDPSession) SetDSCP(tos int) {
 }
 
 func (s *UDPSession) outputTask() {
-	encbuf := make([]byte, aes.BlockSize)
+	var encbuf []byte
 	fecOffset := 0
 	if s.block != nil {
 		fecOffset = cryptHeaderSize
+		encbuf = make([]byte, s.block.BlockSize())
 	}
 	var fec_group [][]byte
 	var fec_cnt int
@@ -521,7 +522,10 @@ func (s *UDPSession) receiver(ch chan []byte) {
 
 // read loop for client session
 func (s *UDPSession) readLoop() {
-	decbuf := make([]byte, 2*aes.BlockSize)
+	var decbuf []byte
+	if s.block != nil {
+		decbuf = make([]byte, 2*s.block.BlockSize())
+	}
 	chPacket := make(chan []byte, rxQueueLimit)
 	go s.receiver(chPacket)
 
@@ -574,7 +578,10 @@ type (
 // monitor incoming data for all connections of server
 func (l *Listener) monitor() {
 	chPacket := make(chan packet, rxQueueLimit)
-	decbuf := make([]byte, 2*aes.BlockSize)
+	var decbuf []byte
+	if l.block != nil {
+		decbuf = make([]byte, 2*l.block.BlockSize())
+	}
 	go l.receiver(chPacket)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
@@ -754,29 +761,31 @@ func DialWithOptions(fec int, raddr string, key []byte) (*UDPSession, error) {
 
 // packet encryption with local CFB mode
 func encrypt(block cipher.Block, data []byte, buf []byte) {
-	tbl := buf[:aes.BlockSize]
+	blocksize := block.BlockSize()
+	tbl := buf[:blocksize]
 	block.Encrypt(tbl, initialVector)
-	n := len(data) / aes.BlockSize
+	n := len(data) / blocksize
 	base := 0
 	for i := 0; i < n; i++ {
 		xorWords(data[base:], data[base:], tbl)
 		block.Encrypt(tbl, data[base:])
-		base += aes.BlockSize
+		base += blocksize
 	}
 	xorBytes(data[base:], data[base:], tbl)
 }
 
 func decrypt(block cipher.Block, data []byte, buf []byte) {
-	tbl := buf[:aes.BlockSize]
-	next := buf[aes.BlockSize:]
+	blocksize := block.BlockSize()
+	tbl := buf[:blocksize]
+	next := buf[blocksize:]
 	block.Encrypt(tbl, initialVector)
-	n := len(data) / aes.BlockSize
+	n := len(data) / blocksize
 	base := 0
 	for i := 0; i < n; i++ {
 		block.Encrypt(next, data[base:])
 		xorWords(data[base:], data[base:], tbl)
 		tbl, next = next, tbl
-		base += aes.BlockSize
+		base += blocksize
 	}
 	xorBytes(data[base:], data[base:], tbl)
 }
