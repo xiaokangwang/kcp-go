@@ -712,7 +712,7 @@ func ListenWithOptions(fec int, laddr string, key []byte) (*Listener, error) {
 	l.fec = fec
 	if key != nil && len(key) > 0 {
 		pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
-		if block, err := aes.NewCipher(pass[:]); err == nil {
+		if block, err := aes.NewCipher(pass); err == nil {
 			l.block = block
 		} else {
 			log.Println(err)
@@ -748,7 +748,7 @@ func DialWithOptions(fec int, raddr string, key []byte) (*UDPSession, error) {
 		if udpconn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port}); err == nil {
 			if key != nil && len(key) > 0 {
 				pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
-				if block, err := aes.NewCipher(pass[:]); err == nil {
+				if block, err := aes.NewCipher(pass); err == nil {
 					return newUDPSession(rand.Uint32(), fec, nil, udpconn, udpaddr, block), nil
 				} else {
 					log.Println(err)
