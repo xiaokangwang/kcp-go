@@ -1,19 +1,38 @@
 package kcp
 
 import (
+	"crypto/sha1"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/pbkdf2"
+	"golang.org/x/crypto/tea"
 )
 
 const port = "127.0.0.1:9999"
+const salt = "kcptest"
 
 var key = []byte("testkey")
 var fec = 4
 
+func DialTest() (*UDPSession, error) {
+	pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
+	//block, _ := aes.NewCipher(pass)
+	block, _ := tea.NewCipherWithRounds(pass[:16], 16)
+	return DialWithOptions(fec, port, block)
+}
+
+func ListenTest() (*Listener, error) {
+	pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
+	//block, _ := aes.NewCipher(pass)
+	block, _ := tea.NewCipherWithRounds(pass[:16], 16)
+	return ListenWithOptions(fec, port, block)
+}
+
 func server() {
-	l, err := ListenWithOptions(fec, port, key)
+	l, err := ListenTest()
 	if err != nil {
 		panic(err)
 	}
@@ -58,7 +77,7 @@ func TestSendRecv(t *testing.T) {
 }
 
 func client(wg *sync.WaitGroup) {
-	cli, err := DialWithOptions(fec, port, key)
+	cli, err := DialTest()
 	if err != nil {
 		panic(err)
 	}
@@ -87,7 +106,7 @@ func TestBigPacket(t *testing.T) {
 }
 
 func client2(wg *sync.WaitGroup) {
-	cli, err := DialWithOptions(fec, port, key)
+	cli, err := DialTest()
 	if err != nil {
 		panic(err)
 	}
@@ -130,7 +149,7 @@ func TestSpeed(t *testing.T) {
 }
 
 func client3(wg *sync.WaitGroup) {
-	cli, err := DialWithOptions(fec, port, key)
+	cli, err := DialTest()
 	if err != nil {
 		panic(err)
 	}
@@ -174,7 +193,7 @@ func TestParallel(t *testing.T) {
 }
 
 func client4(wg *sync.WaitGroup) {
-	cli, err := DialWithOptions(fec, port, key)
+	cli, err := DialTest()
 	if err != nil {
 		panic(err)
 	}

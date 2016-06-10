@@ -1,10 +1,8 @@
 package kcp
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
 	crand "crypto/rand"
-	"crypto/sha1"
 	"encoding/binary"
 	"errors"
 	"hash/crc32"
@@ -16,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/net/ipv4"
 )
 
@@ -24,7 +21,6 @@ var (
 	errTimeout    = errors.New("i/o timeout")
 	errBrokenPipe = errors.New("broken pipe")
 	initialVector = []byte{167, 115, 79, 156, 18, 172, 27, 1, 164, 21, 242, 193, 252, 120, 230, 107}
-	salt          = "kcp-go"
 )
 
 const (
@@ -693,7 +689,7 @@ func Listen(laddr string) (*Listener, error) {
 
 // ListenWithOptions listens for incoming KCP packets addressed to the local address laddr on the network "udp" with packet encryption,
 // FEC = 0 means no FEC, FEC > 0 means num(FEC) as a FEC cluster
-func ListenWithOptions(fec int, laddr string, key []byte) (*Listener, error) {
+func ListenWithOptions(fec int, laddr string, block cipher.Block) (*Listener, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", laddr)
 	if err != nil {
 		return nil, err
@@ -710,14 +706,7 @@ func ListenWithOptions(fec int, laddr string, key []byte) (*Listener, error) {
 	l.chDeadlinks = make(chan net.Addr, 1024)
 	l.die = make(chan struct{})
 	l.fec = fec
-	if key != nil && len(key) > 0 {
-		pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
-		if block, err := aes.NewCipher(pass); err == nil {
-			l.block = block
-		} else {
-			log.Println(err)
-		}
-	}
+	l.block = block
 
 	// caculate header size
 	if l.block != nil {
@@ -737,7 +726,7 @@ func Dial(raddr string) (*UDPSession, error) {
 }
 
 // DialWithOptions connects to the remote address raddr on the network "udp" with packet encryption
-func DialWithOptions(fec int, raddr string, key []byte) (*UDPSession, error) {
+func DialWithOptions(fec int, raddr string, block cipher.Block) (*UDPSession, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", raddr)
 	if err != nil {
 		return nil, err
@@ -746,15 +735,7 @@ func DialWithOptions(fec int, raddr string, key []byte) (*UDPSession, error) {
 	for {
 		port := basePort + rand.Int()%(maxPort-basePort)
 		if udpconn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port}); err == nil {
-			if key != nil && len(key) > 0 {
-				pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
-				if block, err := aes.NewCipher(pass); err == nil {
-					return newUDPSession(rand.Uint32(), fec, nil, udpconn, udpaddr, block), nil
-				} else {
-					log.Println(err)
-				}
-			}
-			return newUDPSession(rand.Uint32(), fec, nil, udpconn, udpaddr, nil), nil
+			return newUDPSession(rand.Uint32(), fec, nil, udpconn, udpaddr, block), nil
 		}
 	}
 }
