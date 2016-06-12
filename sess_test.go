@@ -1,6 +1,7 @@
 package kcp
 
 import (
+	"crypto/aes"
 	"crypto/sha1"
 	"fmt"
 	"sync"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/pbkdf2"
-	"golang.org/x/crypto/tea"
 )
 
 const port = "127.0.0.1:9999"
@@ -19,15 +19,15 @@ var fec = 4
 
 func DialTest() (*UDPSession, error) {
 	pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
-	//block, _ := aes.NewCipher(pass)
-	block, _ := tea.NewCipherWithRounds(pass[:16], 16)
+	block, _ := aes.NewCipher(pass)
+	//block, _ := tea.NewCipherWithRounds(pass[:16], 16)
 	return DialWithOptions(fec, port, block)
 }
 
 func ListenTest() (*Listener, error) {
 	pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
-	//block, _ := aes.NewCipher(pass)
-	block, _ := tea.NewCipherWithRounds(pass[:16], 16)
+	block, _ := aes.NewCipher(pass)
+	//block, _ := tea.NewCipherWithRounds(pass[:16], 16)
 	return ListenWithOptions(fec, port, block)
 }
 

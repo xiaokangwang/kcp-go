@@ -424,9 +424,11 @@ func (s *UDPSession) updateTask() {
 				s.kcp.Update(current)
 				nextupdate = s.kcp.Check(current)
 			}
+			if s.kcp.WaitSnd() < int(s.kcp.snd_wnd) {
+				s.notifyWriteEvent()
+			}
 			s.needUpdate = false
 			s.mu.Unlock()
-			s.notifyWriteEvent()
 		case <-s.die:
 			if s.l != nil { // has listener
 				s.l.chDeadlinks <- s.remote
