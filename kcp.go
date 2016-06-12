@@ -405,17 +405,10 @@ func (kcp *KCP) parse_data(newseg *Segment) {
 	if !repeat {
 		if insert_idx == n+1 {
 			kcp.rcv_buf = append(kcp.rcv_buf, *newseg)
-		} else if insert_idx == 0 {
-			rcv_buf := make([]Segment, len(kcp.rcv_buf)+1)
-			rcv_buf[0] = *newseg
-			copy(rcv_buf[1:], kcp.rcv_buf)
-			kcp.rcv_buf = rcv_buf
 		} else {
-			rcv_buf := make([]Segment, len(kcp.rcv_buf)+1)
-			copy(rcv_buf, kcp.rcv_buf[:insert_idx])
-			rcv_buf[insert_idx] = *newseg
-			copy(rcv_buf[insert_idx+1:], kcp.rcv_buf[insert_idx:])
-			kcp.rcv_buf = rcv_buf
+			kcp.rcv_buf = append(kcp.rcv_buf, Segment{})
+			copy(kcp.rcv_buf[insert_idx+1:], kcp.rcv_buf[insert_idx:])
+			kcp.rcv_buf[insert_idx] = *newseg
 		}
 	}
 

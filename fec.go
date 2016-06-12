@@ -77,17 +77,10 @@ func (fec *FEC) input(pkt fecPacket) []byte {
 	// insert into ordered rx queue
 	if insert_idx == n+1 {
 		fec.rx = append(fec.rx, pkt)
-	} else if insert_idx == 0 {
-		rx := make([]fecPacket, len(fec.rx)+1)
-		rx[0] = pkt
-		copy(rx[1:], fec.rx)
-		fec.rx = rx
 	} else {
-		rx := make([]fecPacket, len(fec.rx)+1)
-		copy(rx, fec.rx[:insert_idx])
-		rx[insert_idx] = pkt
-		copy(rx[insert_idx+1:], fec.rx[insert_idx:])
-		fec.rx = rx
+		fec.rx = append(fec.rx, fecPacket{})
+		copy(fec.rx[insert_idx+1:], fec.rx[insert_idx:])
+		fec.rx[insert_idx] = pkt
 	}
 
 	var recovered []byte
