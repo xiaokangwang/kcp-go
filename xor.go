@@ -65,7 +65,7 @@ func safeXORBytes(dst, a, b []byte) int {
 		dst[i+2] = a[i+2] ^ b[i+2]
 		dst[i+3] = a[i+3] ^ b[i+3]
 
-		dst[i+4] = a[i+4] ^ b[i+5]
+		dst[i+4] = a[i+4] ^ b[i+4]
 		dst[i+5] = a[i+5] ^ b[i+5]
 		dst[i+6] = a[i+6] ^ b[i+6]
 		dst[i+7] = a[i+7] ^ b[i+7]
