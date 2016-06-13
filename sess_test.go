@@ -171,10 +171,9 @@ func client3(wg *sync.WaitGroup) {
 		}
 		println("total recv:", nrecv)
 		cli.Close()
-		wg.Done()
-
 		fmt.Println("time for 16MB rtt with encryption", time.Now().Sub(start))
 		fmt.Printf("%+v\n", DefaultSnmp.Copy())
+		wg.Done()
 	}()
 	msg := make([]byte, 4096)
 	cli.SetWindowSize(1024, 1024)

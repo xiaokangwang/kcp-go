@@ -85,7 +85,7 @@ type SimpleXORBlockCrypt struct {
 
 func NewSimpleXORBlockCrypt(key []byte) (BlockCrypt, error) {
 	c := new(SimpleXORBlockCrypt)
-	c.xortbl = pbkdf2.Key(key, []byte(saltxor), 4096, mtuLimit, sha1.New)
+	c.xortbl = pbkdf2.Key(key, []byte(saltxor), 1024, mtuLimit, sha1.New)
 	return c, nil
 }
 
