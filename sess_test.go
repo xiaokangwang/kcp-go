@@ -18,15 +18,17 @@ var fec = 4
 
 func DialTest() (*UDPSession, error) {
 	pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
-	block, _ := NewAESBlockCrypt(pass)
+	block, _ := NewSimpleXORBlockCrypt(pass)
+	//block, _ := NewTEABlockCrypt(pass[:16])
 	//block, _ := NewTEABlockCrypt(pass[:16])
 	return DialWithOptions(fec, port, block)
 }
 
 func ListenTest() (*Listener, error) {
 	pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
-	block, _ := NewAESBlockCrypt(pass)
+	block, _ := NewSimpleXORBlockCrypt(pass)
 	//block, _ := NewTEABlockCrypt(pass[:16])
+	//block, _ := NewAESBlockCrypt(pass)
 	return ListenWithOptions(fec, port, block)
 }
 
@@ -138,13 +140,10 @@ func client2(wg *sync.WaitGroup) {
 }
 
 func TestSpeed(t *testing.T) {
-	start := time.Now()
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go client3(&wg)
 	wg.Wait()
-	fmt.Println("time for 16MB rtt with encryption", time.Now().Sub(start))
-	fmt.Printf("%+v\n", DefaultSnmp.Copy())
 }
 
 func client3(wg *sync.WaitGroup) {
@@ -153,6 +152,7 @@ func client3(wg *sync.WaitGroup) {
 		panic(err)
 	}
 	cli.SetNoDelay(0, 20, 2, 1)
+	start := time.Now()
 
 	go func() {
 		buf := make([]byte, 1024*1024)
@@ -172,6 +172,9 @@ func client3(wg *sync.WaitGroup) {
 		println("total recv:", nrecv)
 		cli.Close()
 		wg.Done()
+
+		fmt.Println("time for 16MB rtt with encryption", time.Now().Sub(start))
+		fmt.Printf("%+v\n", DefaultSnmp.Copy())
 	}()
 	msg := make([]byte, 4096)
 	cli.SetWindowSize(1024, 1024)

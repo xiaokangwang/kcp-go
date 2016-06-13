@@ -25,8 +25,20 @@ func fastXORBytes(dst, a, b []byte) int {
 		dw := *(*[]uintptr)(unsafe.Pointer(&dst))
 		aw := *(*[]uintptr)(unsafe.Pointer(&a))
 		bw := *(*[]uintptr)(unsafe.Pointer(&b))
-		for i := 0; i < w; i++ {
+		ex := w % 8
+		for i := 0; i < ex; i++ {
 			dw[i] = aw[i] ^ bw[i]
+		}
+
+		for i := ex; i < w; i += 8 {
+			dw[i] = aw[i] ^ bw[i]
+			dw[i+1] = aw[i+1] ^ bw[i+1]
+			dw[i+2] = aw[i+2] ^ bw[i+2]
+			dw[i+3] = aw[i+3] ^ bw[i+3]
+			dw[i+4] = aw[i+4] ^ bw[i+4]
+			dw[i+5] = aw[i+5] ^ bw[i+5]
+			dw[i+6] = aw[i+6] ^ bw[i+6]
+			dw[i+7] = aw[i+7] ^ bw[i+7]
 		}
 	}
 
@@ -42,8 +54,21 @@ func safeXORBytes(dst, a, b []byte) int {
 	if len(b) < n {
 		n = len(b)
 	}
-	for i := 0; i < n; i++ {
+	ex := n % 8
+	for i := 0; i < ex; i++ {
 		dst[i] = a[i] ^ b[i]
+	}
+
+	for i := ex; i < n; i += 8 {
+		dst[i] = a[i] ^ b[i]
+		dst[i+1] = a[i+1] ^ b[i+1]
+		dst[i+2] = a[i+2] ^ b[i+2]
+		dst[i+3] = a[i+3] ^ b[i+3]
+
+		dst[i+4] = a[i+4] ^ b[i+5]
+		dst[i+5] = a[i+5] ^ b[i+5]
+		dst[i+6] = a[i+6] ^ b[i+6]
+		dst[i+7] = a[i+7] ^ b[i+7]
 	}
 	return n
 }
@@ -70,8 +95,20 @@ func fastXORWords(dst, a, b []byte) {
 	aw := *(*[]uintptr)(unsafe.Pointer(&a))
 	bw := *(*[]uintptr)(unsafe.Pointer(&b))
 	n := len(b) / wordSize
-	for i := 0; i < n; i++ {
+	ex := n % 8
+	for i := 0; i < ex; i++ {
 		dw[i] = aw[i] ^ bw[i]
+	}
+
+	for i := ex; i < n; i += 8 {
+		dw[i] = aw[i] ^ bw[i]
+		dw[i+1] = aw[i+1] ^ bw[i+1]
+		dw[i+2] = aw[i+2] ^ bw[i+2]
+		dw[i+3] = aw[i+3] ^ bw[i+3]
+		dw[i+4] = aw[i+4] ^ bw[i+4]
+		dw[i+5] = aw[i+5] ^ bw[i+5]
+		dw[i+6] = aw[i+6] ^ bw[i+6]
+		dw[i+7] = aw[i+7] ^ bw[i+7]
 	}
 }
 
