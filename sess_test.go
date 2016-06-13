@@ -18,7 +18,8 @@ var fec = 4
 
 func DialTest() (*UDPSession, error) {
 	pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
-	block, _ := NewSimpleXORBlockCrypt(pass)
+	block, _ := NewNoneBlockCrypt(pass)
+	//block, _ := NewSimpleXORBlockCrypt(pass)
 	//block, _ := NewTEABlockCrypt(pass[:16])
 	//block, _ := NewAESBlockCrypt(pass)
 	return DialWithOptions(fec, port, block)
@@ -26,7 +27,8 @@ func DialTest() (*UDPSession, error) {
 
 func ListenTest() (*Listener, error) {
 	pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
-	block, _ := NewSimpleXORBlockCrypt(pass)
+	block, _ := NewNoneBlockCrypt(pass)
+	//block, _ := NewSimpleXORBlockCrypt(pass)
 	//block, _ := NewTEABlockCrypt(pass[:16])
 	//block, _ := NewAESBlockCrypt(pass)
 	return ListenWithOptions(fec, port, block)

@@ -97,6 +97,18 @@ func (c *SimpleXORBlockCrypt) Decrypt(dst, src []byte) {
 	xorBytes(dst, src, c.xortbl)
 }
 
+// None Encryption
+type NoneBlockCrypt struct {
+	xortbl []byte
+}
+
+func NewNoneBlockCrypt(key []byte) (BlockCrypt, error) {
+	return new(NoneBlockCrypt), nil
+}
+
+func (c *NoneBlockCrypt) Encrypt(dst, src []byte) {}
+func (c *NoneBlockCrypt) Decrypt(dst, src []byte) {}
+
 // packet encryption with local CFB mode
 func encrypt(block cipher.Block, dst, src, buf []byte) {
 	blocksize := block.BlockSize()
