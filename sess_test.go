@@ -20,7 +20,7 @@ func DialTest() (*UDPSession, error) {
 	pass := pbkdf2.Key(key, []byte(salt), 4096, 32, sha1.New)
 	block, _ := NewSimpleXORBlockCrypt(pass)
 	//block, _ := NewTEABlockCrypt(pass[:16])
-	//block, _ := NewTEABlockCrypt(pass[:16])
+	//block, _ := NewAESBlockCrypt(pass)
 	return DialWithOptions(fec, port, block)
 }
 
